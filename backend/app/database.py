@@ -1,9 +1,11 @@
 from pathlib import Path
 from datetime import date, datetime, timezone
 from decimal import Decimal
+import sqlite3
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Column, JSON, text
+from sqlalchemy import CheckConstraint, Column, JSON, event, text
+from sqlalchemy.engine import Engine
 from sqlmodel import Field, Session, SQLModel, UniqueConstraint, create_engine, select
 
 from app.config import settings
@@ -101,7 +103,7 @@ class Transaction(SQLModel, table=True):
     source_category: str | None = Field(default=None, max_length=120)
     check_number: str | None = Field(default=None, max_length=60)
     balance: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
-    duplicate_fingerprint: str = Field(index=True, unique=True, max_length=128)
+    duplicate_fingerprint: str = Field(index=True, max_length=128)
     created_at: datetime = Field(default_factory=utc_now)
 
 
@@ -129,6 +131,16 @@ def _ensure_sqlite_parent(database_url: str) -> None:
 
 _ensure_sqlite_parent(settings.database_url)
 engine = create_engine(settings.database_url, connect_args={"check_same_thread": False})
+
+
+@event.listens_for(Engine, "connect")
+def enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+    if not isinstance(dbapi_connection, sqlite3.Connection):
+        return
+
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 def init_db(database_engine=engine) -> None:
