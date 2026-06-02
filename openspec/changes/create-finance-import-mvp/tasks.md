@@ -8,11 +8,11 @@
 
 ## 2. Database Schema
 
-- [ ] 2.1 Create SQLite schema management for initial database setup (#2)
-- [ ] 2.2 Add tables for accounts, upload files, raw import rows, import templates, transactions, labels, and transaction label rules (#2)
-- [ ] 2.3 Seed the fixed MVP label taxonomy, including uncategorized (#2)
-- [ ] 2.4 Add indexes needed for transaction lookup, duplicate detection, dashboard month queries, and label rule matching (#2)
-- [ ] 2.5 Add database tests or verification for schema creation and label seeding (#2)
+- [x] 2.1 Create SQLite schema management for initial database setup (#2)
+- [x] 2.2 Add tables for accounts, upload files, raw import rows, import templates, transactions, labels, and transaction label rules (#2)
+- [x] 2.3 Seed the fixed MVP label taxonomy, including uncategorized (#2)
+- [x] 2.4 Add indexes needed for transaction lookup, duplicate detection, dashboard month queries, and label rule matching (#2)
+- [x] 2.5 Add database tests or verification for schema creation and label seeding (#2)
 
 ## 3. CSV Upload Preview
 
