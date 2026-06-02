@@ -1,10 +1,10 @@
 ## 1. Project Foundation
 
-- [ ] 1.1 Create the Docker-runnable application structure with separate backend and frontend directories (#1)
-- [ ] 1.2 Add FastAPI backend dependencies, including SQLite database access, Polars CSV processing, and validation support (#1)
-- [ ] 1.3 Add Vite + React frontend dependencies, including routing, API client utilities, forms, and charting (#1)
-- [ ] 1.4 Add Docker and local development commands for running the frontend, backend, and persisted SQLite database (#1)
-- [ ] 1.5 Add basic backend and frontend health checks to verify the app boots locally (#1)
+- [x] 1.1 Create the Docker-runnable application structure with separate backend and frontend directories (#1)
+- [x] 1.2 Add FastAPI backend dependencies, including SQLite database access, Polars CSV processing, and validation support (#1)
+- [x] 1.3 Add Vite + React frontend dependencies, including routing, API client utilities, forms, and charting (#1)
+- [x] 1.4 Add Docker and local development commands for running the frontend, backend, and persisted SQLite database (#1)
+- [x] 1.5 Add basic backend and frontend health checks to verify the app boots locally (#1)
 
 ## 2. Database Schema
 
