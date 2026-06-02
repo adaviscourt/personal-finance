@@ -131,7 +131,18 @@ input[type="file"] {
   background: white;
 }
 
-.upload-form button {
+input,
+select {
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #c9d4c1;
+  border-radius: 12px;
+  background: white;
+  color: #172033;
+}
+
+.upload-form button,
+.template-editor button {
   min-height: 44px;
   padding: 0 18px;
   border: 0;
@@ -142,7 +153,8 @@ input[type="file"] {
   cursor: pointer;
 }
 
-.upload-form button:disabled {
+.upload-form button:disabled,
+.template-editor button:disabled {
   cursor: not-allowed;
   opacity: 0.65;
 }
@@ -156,6 +168,70 @@ input[type="file"] {
 .preview-results {
   display: grid;
   gap: 24px;
+}
+
+.template-editor {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid #d7e0d2;
+  border-radius: 20px;
+  background: #f5faef;
+}
+
+.template-editor-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.template-editor p {
+  margin: 0;
+  color: #596473;
+}
+
+.template-editor label,
+.template-name {
+  display: grid;
+  gap: 7px;
+  color: #344055;
+  font-weight: 800;
+}
+
+.template-name {
+  max-width: 460px;
+}
+
+.mapping-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.mapping-row {
+  display: grid;
+  grid-template-columns: 120px minmax(180px, 1fr) minmax(180px, 1fr);
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid #dde6d6;
+  border-radius: 16px;
+  background: white;
+}
+
+.mapping-row strong {
+  color: #26371f;
+  text-transform: capitalize;
+}
+
+.template-note {
+  font-weight: 700;
+}
+
+.template-status {
+  color: #2f6d30;
+  font-weight: 800;
 }
 
 .column-list {
@@ -230,5 +306,9 @@ td {
 
   .upload-form button {
     width: 100%;
+  }
+
+  .mapping-row {
+    grid-template-columns: 1fr;
   }
 }

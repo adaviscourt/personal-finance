@@ -2,8 +2,38 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
-import { getHealth, previewCsv, type CsvPreviewResponse, type HealthResponse } from "./api/client";
+import {
+  createImportTemplate,
+  getHealth,
+  listImportTemplates,
+  previewCsv,
+  updateImportTemplate,
+  type CsvPreviewResponse,
+  type HealthResponse,
+  type ImportTemplate,
+  type ImportTemplateConfig,
+  type TemplateTransform,
+} from "./api/client";
 import "./App.css";
+
+const REQUIRED_FIELDS = ["date", "description", "amount", "direction"] as const;
+const DEFAULT_TRANSFORMS: Record<(typeof REQUIRED_FIELDS)[number], TemplateTransform> = {
+  date: "parse_date",
+  description: "copy_column",
+  amount: "absolute_numeric",
+  direction: "signed_amount_direction",
+};
+
+type MappingDraft = Record<(typeof REQUIRED_FIELDS)[number], string>;
+type TransformDraft = Record<(typeof REQUIRED_FIELDS)[number], TemplateTransform>;
+
+function createEmptyMappings(): MappingDraft {
+  return { date: "", description: "", amount: "", direction: "" };
+}
+
+function createDefaultTransforms(): TransformDraft {
+  return { ...DEFAULT_TRANSFORMS };
+}
 
 function Home() {
   const [apiHealth, setApiHealth] = useState<HealthResponse | null>(null);
@@ -12,6 +42,14 @@ function Home() {
   const [preview, setPreview] = useState<CsvPreviewResponse | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [templates, setTemplates] = useState<ImportTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | "new">("new");
+  const [templateName, setTemplateName] = useState("");
+  const [mappingDraft, setMappingDraft] = useState<MappingDraft>(createEmptyMappings);
+  const [transformDraft, setTransformDraft] = useState<TransformDraft>(createDefaultTransforms);
+  const [templateStatus, setTemplateStatus] = useState<string | null>(null);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateSaving, setTemplateSaving] = useState(false);
   const previewRequestId = useRef(0);
 
   useEffect(() => {
@@ -33,6 +71,79 @@ function Home() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    listImportTemplates()
+      .then(setTemplates)
+      .catch(() => setTemplateError("Could not load import templates."));
+  }, []);
+
+  function applyTemplateToDraft(template: ImportTemplate) {
+    const nextMappings = createEmptyMappings();
+    const nextTransforms = createDefaultTransforms();
+
+    for (const field of REQUIRED_FIELDS) {
+      const mapping = template.config.mappings[field];
+      nextMappings[field] = mapping?.source_column ?? "";
+      nextTransforms[field] = mapping?.transform ?? DEFAULT_TRANSFORMS[field];
+    }
+
+    setTemplateName(template.name);
+    setMappingDraft(nextMappings);
+    setTransformDraft(nextTransforms);
+  }
+
+  function buildTemplateConfig(): ImportTemplateConfig {
+    return {
+      mappings: {
+        date: { source_column: mappingDraft.date, transform: transformDraft.date },
+        description: { source_column: mappingDraft.description, transform: transformDraft.description },
+        amount: { source_column: mappingDraft.amount, transform: transformDraft.amount },
+        direction: {
+          source_column: mappingDraft.direction,
+          transform: transformDraft.direction,
+          positive_direction: "credit",
+          negative_direction: "debit",
+        },
+      },
+    };
+  }
+
+  async function handleTemplateSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setTemplateStatus(null);
+    setTemplateError(null);
+
+    if (!templateName.trim()) {
+      setTemplateError("Name the template before saving.");
+      return;
+    }
+
+    const missingField = REQUIRED_FIELDS.find((field) => !mappingDraft[field]);
+    if (missingField) {
+      setTemplateError(`Map the required ${missingField} field before saving.`);
+      return;
+    }
+
+    setTemplateSaving(true);
+    try {
+      const payload = { name: templateName, account_id: null, config: buildTemplateConfig() };
+      const savedTemplate =
+        selectedTemplateId === "new"
+          ? await createImportTemplate(payload)
+          : await updateImportTemplate(selectedTemplateId, payload);
+      setTemplates((currentTemplates) => {
+        const withoutSaved = currentTemplates.filter((template) => template.id !== savedTemplate.id);
+        return [...withoutSaved, savedTemplate].sort((first, second) => first.name.localeCompare(second.name));
+      });
+      setSelectedTemplateId(savedTemplate.id);
+      setTemplateStatus("Template saved for future imports.");
+    } catch {
+      setTemplateError("Could not save that template. Check required mappings and transform settings.");
+    } finally {
+      setTemplateSaving(false);
+    }
+  }
 
   async function handlePreviewSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -95,6 +206,7 @@ function Home() {
                 setSelectedFile(event.target.files?.[0] ?? null);
                 setPreview(null);
                 setPreviewError(null);
+                setTemplateStatus(null);
               }}
             />
           </label>
@@ -113,6 +225,99 @@ function Home() {
                 ))}
               </div>
             </div>
+            <form className="template-editor" onSubmit={handleTemplateSubmit}>
+              <div className="template-editor-header">
+                <div>
+                  <h3>Import Template</h3>
+                  <p>Map required transaction fields before generating transformed previews.</p>
+                </div>
+                <label>
+                  <span>Template</span>
+                  <select
+                    value={selectedTemplateId}
+                    onChange={(event) => {
+                      const value = event.target.value === "new" ? "new" : Number(event.target.value);
+                      setSelectedTemplateId(value);
+                      setTemplateStatus(null);
+                      setTemplateError(null);
+                      if (value === "new") {
+                        setTemplateName("");
+                        setMappingDraft(createEmptyMappings());
+                        setTransformDraft(createDefaultTransforms());
+                        return;
+                      }
+                      const template = templates.find((candidate) => candidate.id === value);
+                      if (template) {
+                        applyTemplateToDraft(template);
+                      }
+                    }}
+                  >
+                    <option value="new">New template</option>
+                    {templates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <label className="template-name">
+                <span>Template name</span>
+                <input
+                  value={templateName}
+                  onChange={(event) => setTemplateName(event.target.value)}
+                  placeholder="Checking account export"
+                />
+              </label>
+              <div className="mapping-grid">
+                {REQUIRED_FIELDS.map((field) => (
+                  <div className="mapping-row" key={field}>
+                    <strong>{field}</strong>
+                    <label>
+                      <span>Source column</span>
+                      <select
+                        value={mappingDraft[field]}
+                        onChange={(event) =>
+                          setMappingDraft((current) => ({ ...current, [field]: event.target.value }))
+                        }
+                      >
+                        <option value="">Choose column</option>
+                        {preview.source_columns.map((column) => (
+                          <option key={column} value={column}>
+                            {column}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Transform</span>
+                      <select
+                        value={transformDraft[field]}
+                        onChange={(event) =>
+                          setTransformDraft((current) => ({
+                            ...current,
+                            [field]: event.target.value as TemplateTransform,
+                          }))
+                        }
+                      >
+                        <option value="copy_column">copy column</option>
+                        <option value="parse_date">parse date</option>
+                        <option value="parse_numeric">parse numeric</option>
+                        <option value="absolute_numeric">absolute numeric</option>
+                        <option value="signed_amount_direction">signed amount direction</option>
+                        <option value="value_lookup">value lookup</option>
+                      </select>
+                    </label>
+                  </div>
+                ))}
+              </div>
+              <p className="template-note">Signed amount direction saves positive as credit and negative as debit.</p>
+              {templateError ? <p className="preview-error">{templateError}</p> : null}
+              {templateStatus ? <p className="template-status">{templateStatus}</p> : null}
+              <button type="submit" disabled={templateSaving}>
+                {templateSaving ? "Saving..." : selectedTemplateId === "new" ? "Save Template" : "Update Template"}
+              </button>
+            </form>
             <div className="table-wrap">
               <table>
                 <thead>
