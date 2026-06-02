@@ -16,11 +16,11 @@
 
 ## 3. CSV Upload Preview
 
-- [ ] 3.1 Implement backend CSV parsing with Polars for uploaded files (#3)
-- [ ] 3.2 Implement backend preview response with detected headers and up to 5 parsed data rows (#3)
-- [ ] 3.3 Implement invalid CSV error handling that does not create importable transactions (#3)
-- [ ] 3.4 Implement frontend upload UI with file selection and raw preview table (#3)
-- [ ] 3.5 Surface parsed source columns from preview responses for template mapping controls (#3)
+- [x] 3.1 Implement backend CSV parsing with Polars for uploaded files (#3)
+- [x] 3.2 Implement backend preview response with detected headers and up to 5 parsed data rows (#3)
+- [x] 3.3 Implement invalid CSV error handling that does not create importable transactions (#3)
+- [x] 3.4 Implement frontend upload UI with file selection and raw preview table (#3)
+- [x] 3.5 Surface parsed source columns from preview responses for template mapping controls (#3)
 
 ## 4. Import Templates
 

@@ -1,12 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
-import { getHealth, type HealthResponse } from "./api/client";
+import { getHealth, previewCsv, type CsvPreviewResponse, type HealthResponse } from "./api/client";
 import "./App.css";
 
 function Home() {
   const [apiHealth, setApiHealth] = useState<HealthResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<CsvPreviewResponse | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const previewRequestId = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -28,6 +34,35 @@ function Home() {
     };
   }, []);
 
+  async function handlePreviewSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedFile) {
+      setPreviewError("Choose a CSV file first.");
+      return;
+    }
+
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreview(null);
+    const requestId = previewRequestId.current + 1;
+    previewRequestId.current = requestId;
+
+    try {
+      const nextPreview = await previewCsv(selectedFile);
+      if (requestId === previewRequestId.current) {
+        setPreview(nextPreview);
+      }
+    } catch {
+      if (requestId === previewRequestId.current) {
+        setPreviewError("Could not parse that CSV. Check the file and try again.");
+      }
+    } finally {
+      if (requestId === previewRequestId.current) {
+        setPreviewLoading(false);
+      }
+    }
+  }
+
   return (
     <main className="app-shell">
       <section className="hero">
@@ -44,6 +79,64 @@ function Home() {
             {error ?? apiHealth?.status ?? "checking"}
           </span>
         </div>
+      </section>
+      <section className="upload-panel" aria-labelledby="upload-heading">
+        <p className="eyebrow">CSV Upload Preview</p>
+        <h2 id="upload-heading">Preview source rows before mapping.</h2>
+        <form className="upload-form" onSubmit={handlePreviewSubmit}>
+          <label className="file-picker">
+            <span>Statement CSV</span>
+            <input
+              accept=".csv,text/csv"
+              disabled={previewLoading}
+              type="file"
+              onChange={(event) => {
+                previewRequestId.current += 1;
+                setSelectedFile(event.target.files?.[0] ?? null);
+                setPreview(null);
+                setPreviewError(null);
+              }}
+            />
+          </label>
+          <button type="submit" disabled={previewLoading}>
+            {previewLoading ? "Parsing..." : "Preview CSV"}
+          </button>
+        </form>
+        {previewError ? <p className="preview-error">{previewError}</p> : null}
+        {preview ? (
+          <div className="preview-results">
+            <div>
+              <h3>Source Columns</h3>
+              <div className="column-list" aria-label="Source columns">
+                {preview.source_columns.map((column) => (
+                  <span key={column}>{column}</span>
+                ))}
+              </div>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    {preview.headers.map((header) => (
+                      <th key={header} scope="col">
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.rows.map((row, index) => (
+                    <tr key={index}>
+                      {preview.headers.map((header) => (
+                        <td key={header}>{row[header] ?? ""}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
       </section>
     </main>
   );
