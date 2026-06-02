@@ -131,7 +131,7 @@ input[type="file"] {
   background: white;
 }
 
-button {
+.upload-form button {
   min-height: 44px;
   padding: 0 18px;
   border: 0;
@@ -142,7 +142,7 @@ button {
   cursor: pointer;
 }
 
-button:disabled {
+.upload-form button:disabled {
   cursor: not-allowed;
   opacity: 0.65;
 }
@@ -223,7 +223,7 @@ td {
     width: 100%;
   }
 
-  button {
+  .upload-form button {
     width: 100%;
   }
 }

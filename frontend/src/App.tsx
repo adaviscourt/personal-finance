@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
@@ -12,6 +12,7 @@ function Home() {
   const [preview, setPreview] = useState<CsvPreviewResponse | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const previewRequestId = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -43,14 +44,22 @@ function Home() {
     setPreviewLoading(true);
     setPreviewError(null);
     setPreview(null);
+    const requestId = previewRequestId.current + 1;
+    previewRequestId.current = requestId;
 
     try {
       const nextPreview = await previewCsv(selectedFile);
-      setPreview(nextPreview);
+      if (requestId === previewRequestId.current) {
+        setPreview(nextPreview);
+      }
     } catch {
-      setPreviewError("Could not parse that CSV. Check the file and try again.");
+      if (requestId === previewRequestId.current) {
+        setPreviewError("Could not parse that CSV. Check the file and try again.");
+      }
     } finally {
-      setPreviewLoading(false);
+      if (requestId === previewRequestId.current) {
+        setPreviewLoading(false);
+      }
     }
   }
 
@@ -79,8 +88,10 @@ function Home() {
             <span>Statement CSV</span>
             <input
               accept=".csv,text/csv"
+              disabled={previewLoading}
               type="file"
               onChange={(event) => {
+                previewRequestId.current += 1;
                 setSelectedFile(event.target.files?.[0] ?? null);
                 setPreview(null);
                 setPreviewError(null);

@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import MAX_PREVIEW_UPLOAD_BYTES, app
 
 
 def test_csv_preview_returns_headers_and_first_five_rows() -> None:
@@ -47,3 +47,16 @@ def test_csv_preview_rejects_invalid_csv_without_creating_importable_rows() -> N
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Could not parse CSV file for preview."}
+
+
+def test_csv_preview_rejects_uploads_over_size_limit() -> None:
+    client = TestClient(app)
+    csv_file = "Date,Amount\n" + ("2026-01-01,-4.50\n" * ((MAX_PREVIEW_UPLOAD_BYTES // 17) + 1))
+
+    response = client.post(
+        "/imports/preview",
+        files={"file": ("statement.csv", csv_file, "text/csv")},
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "CSV preview uploads must be 10 MB or smaller."}

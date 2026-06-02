@@ -10,6 +10,9 @@ from pydantic import BaseModel
 from app.database import check_database, init_db
 
 
+MAX_PREVIEW_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
 class CsvPreviewResponse(BaseModel):
     headers: list[str]
     rows: list[dict[str, Any]]
@@ -40,9 +43,11 @@ def health() -> dict[str, str]:
 
 @app.post("/imports/preview")
 async def preview_import(file: UploadFile) -> CsvPreviewResponse:
-    contents = await file.read()
+    contents = await file.read(MAX_PREVIEW_UPLOAD_BYTES + 1)
     if not contents:
         raise HTTPException(status_code=400, detail="Upload a non-empty CSV file.")
+    if len(contents) > MAX_PREVIEW_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="CSV preview uploads must be 10 MB or smaller.")
 
     try:
         frame = pl.read_csv(BytesIO(contents), infer_schema_length=0)
