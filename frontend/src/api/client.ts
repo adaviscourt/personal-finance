@@ -53,6 +53,15 @@ export type ImportTemplatePayload = {
   config: ImportTemplateConfig;
 };
 
+export type UniqueValuesResponse = {
+  source_column: string;
+  values: string[];
+};
+
+export type TransformedPreviewResponse = {
+  rows: Record<string, string | null>[];
+};
+
 export async function getHealth(): Promise<HealthResponse> {
   const response = await api.get<HealthResponse>("/health");
   return response.data;
@@ -63,6 +72,27 @@ export async function previewCsv(file: File): Promise<CsvPreviewResponse> {
   formData.append("file", file);
 
   const response = await api.post<CsvPreviewResponse>("/imports/preview", formData);
+  return response.data;
+}
+
+export async function listUniqueValues(file: File, sourceColumn: string): Promise<UniqueValuesResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("source_column", sourceColumn);
+
+  const response = await api.post<UniqueValuesResponse>("/imports/unique-values", formData);
+  return response.data;
+}
+
+export async function previewTransformedCsv(
+  file: File,
+  templateConfig: ImportTemplateConfig,
+): Promise<TransformedPreviewResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("template_config", JSON.stringify(templateConfig));
+
+  const response = await api.post<TransformedPreviewResponse>("/imports/transformed-preview", formData);
   return response.data;
 }
 
