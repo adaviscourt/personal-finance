@@ -129,4 +129,65 @@ describe("App", () => {
       },
     });
   });
+
+  it("preserves account association when updating a selected template", async () => {
+    mockedListImportTemplates.mockResolvedValue([
+      {
+        id: 7,
+        name: "Account export",
+        account_id: 42,
+        created_at: "2026-01-01T00:00:00+00:00",
+        updated_at: "2026-01-01T00:00:00+00:00",
+        config: {
+          mappings: {
+            date: { source_column: "Date", transform: "parse_date" },
+            description: { source_column: "Description", transform: "copy_column" },
+            amount: { source_column: "Amount", transform: "absolute_numeric" },
+            direction: { source_column: "Amount", transform: "signed_amount_direction" },
+          },
+        },
+      },
+    ]);
+    mockedPreviewCsv.mockResolvedValue({
+      headers: ["Date", "Description", "Amount"],
+      source_columns: ["Date", "Description", "Amount"],
+      rows: [{ Date: "2026-01-01", Description: "Coffee", Amount: "-4.50" }],
+    });
+    mockedUpdateImportTemplate.mockResolvedValue({
+      id: 7,
+      name: "Account export",
+      account_id: 42,
+      created_at: "2026-01-01T00:00:00+00:00",
+      updated_at: "2026-01-02T00:00:00+00:00",
+      config: {
+        mappings: {
+          date: { source_column: "Date", transform: "parse_date" },
+          description: { source_column: "Description", transform: "copy_column" },
+          amount: { source_column: "Amount", transform: "absolute_numeric" },
+          direction: { source_column: "Amount", transform: "signed_amount_direction" },
+        },
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByLabelText("Statement CSV"), {
+      target: { files: [new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv")] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+
+    expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Template"), { target: { value: "7" } });
+    fireEvent.click(screen.getByRole("button", { name: "Update Template" }));
+
+    expect(await screen.findByText("Template saved for future imports.")).toBeInTheDocument();
+    expect(mockedUpdateImportTemplate).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ account_id: 42 }),
+    );
+  });
 });

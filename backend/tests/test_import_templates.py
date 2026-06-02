@@ -89,6 +89,17 @@ def test_template_validation_rejects_unknown_transform() -> None:
     assert response.status_code == 422
 
 
+def test_template_validation_rejects_missing_account() -> None:
+    client = TestClient(app)
+    payload = valid_template_payload("Missing Account")
+    payload["account_id"] = 999_999
+
+    response = client.post("/import-templates", json=payload)
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Account not found."}
+
+
 def test_account_filter_includes_global_and_matching_account_templates() -> None:
     client = TestClient(app)
     cleanup_template_names("Global Template", "Account Template")

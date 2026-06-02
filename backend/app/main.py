@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlmodel import Session, col, select
 
-from app.database import ImportTemplate, check_database, engine, init_db, utc_now
+from app.database import Account, ImportTemplate, check_database, engine, init_db, utc_now
 
 
 MAX_PREVIEW_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -105,6 +105,11 @@ def serialize_template(template: ImportTemplate) -> ImportTemplateResponse:
     )
 
 
+def validate_template_account(session: Session, account_id: int | None) -> None:
+    if account_id is not None and session.get(Account, account_id) is None:
+        raise HTTPException(status_code=404, detail="Account not found.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -156,6 +161,7 @@ def create_import_template(payload: ImportTemplatePayload) -> ImportTemplateResp
         config=payload.config.model_dump(mode="json"),
     )
     with Session(engine) as session:
+        validate_template_account(session, payload.account_id)
         session.add(template)
         session.commit()
         session.refresh(template)
@@ -193,6 +199,7 @@ def update_import_template(template_id: int, payload: ImportTemplatePayload) -> 
         template = session.get(ImportTemplate, template_id)
         if template is None:
             raise HTTPException(status_code=404, detail="Import template not found.")
+        validate_template_account(session, payload.account_id)
 
         template.name = payload.name
         template.account_id = payload.account_id

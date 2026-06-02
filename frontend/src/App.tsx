@@ -127,7 +127,11 @@ function Home() {
 
     setTemplateSaving(true);
     try {
-      const payload = { name: templateName, account_id: null, config: buildTemplateConfig() };
+      const selectedTemplate =
+        selectedTemplateId === "new"
+          ? null
+          : templates.find((template) => template.id === selectedTemplateId) ?? null;
+      const payload = { name: templateName, account_id: selectedTemplate?.account_id ?? null, config: buildTemplateConfig() };
       const savedTemplate =
         selectedTemplateId === "new"
           ? await createImportTemplate(payload)
@@ -305,7 +309,6 @@ function Home() {
                         <option value="parse_numeric">parse numeric</option>
                         <option value="absolute_numeric">absolute numeric</option>
                         <option value="signed_amount_direction">signed amount direction</option>
-                        <option value="value_lookup">value lookup</option>
                       </select>
                     </label>
                   </div>
