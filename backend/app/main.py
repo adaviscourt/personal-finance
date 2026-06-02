@@ -1,9 +1,19 @@
 from contextlib import asynccontextmanager
+from io import BytesIO
+from typing import Any
 
-from fastapi import FastAPI
+import polars as pl
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from app.database import check_database, init_db
+
+
+class CsvPreviewResponse(BaseModel):
+    headers: list[str]
+    rows: list[dict[str, Any]]
+    source_columns: list[str]
 
 
 @asynccontextmanager
@@ -26,3 +36,22 @@ app.add_middleware(
 def health() -> dict[str, str]:
     check_database()
     return {"status": "ok", "database": "ok"}
+
+
+@app.post("/imports/preview")
+async def preview_import(file: UploadFile) -> CsvPreviewResponse:
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Upload a non-empty CSV file.")
+
+    try:
+        frame = pl.read_csv(BytesIO(contents), infer_schema_length=0)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Could not parse CSV file for preview.") from exc
+
+    headers = frame.columns
+    if not headers:
+        raise HTTPException(status_code=400, detail="CSV file must include headers.")
+
+    preview_rows = frame.head(5).to_dicts()
+    return CsvPreviewResponse(headers=headers, rows=preview_rows, source_columns=headers)
