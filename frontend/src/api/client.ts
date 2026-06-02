@@ -15,6 +15,44 @@ export type CsvPreviewResponse = {
   source_columns: string[];
 };
 
+export type TemplateTransform =
+  | "copy_column"
+  | "parse_date"
+  | "parse_numeric"
+  | "absolute_numeric"
+  | "signed_amount_direction"
+  | "split_amount_direction"
+  | "value_lookup";
+
+export type TemplateFieldMapping = {
+  source_column?: string | null;
+  transform: TemplateTransform;
+  rules?: Record<string, "debit" | "credit"> | null;
+  positive_direction?: "debit" | "credit" | null;
+  negative_direction?: "debit" | "credit" | null;
+  debit_column?: string | null;
+  credit_column?: string | null;
+};
+
+export type ImportTemplateConfig = {
+  mappings: Record<string, TemplateFieldMapping>;
+};
+
+export type ImportTemplate = {
+  id: number;
+  name: string;
+  account_id: number | null;
+  config: ImportTemplateConfig;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ImportTemplatePayload = {
+  name: string;
+  account_id: number | null;
+  config: ImportTemplateConfig;
+};
+
 export async function getHealth(): Promise<HealthResponse> {
   const response = await api.get<HealthResponse>("/health");
   return response.data;
@@ -25,5 +63,23 @@ export async function previewCsv(file: File): Promise<CsvPreviewResponse> {
   formData.append("file", file);
 
   const response = await api.post<CsvPreviewResponse>("/imports/preview", formData);
+  return response.data;
+}
+
+export async function listImportTemplates(): Promise<ImportTemplate[]> {
+  const response = await api.get<ImportTemplate[]>("/import-templates");
+  return response.data;
+}
+
+export async function createImportTemplate(payload: ImportTemplatePayload): Promise<ImportTemplate> {
+  const response = await api.post<ImportTemplate>("/import-templates", payload);
+  return response.data;
+}
+
+export async function updateImportTemplate(
+  templateId: number,
+  payload: ImportTemplatePayload,
+): Promise<ImportTemplate> {
+  const response = await api.put<ImportTemplate>(`/import-templates/${templateId}`, payload);
   return response.data;
 }

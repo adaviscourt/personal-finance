@@ -24,12 +24,12 @@
 
 ## 4. Import Templates
 
-- [ ] 4.1 Define backend validation models for structured import template configuration (#4)
-- [ ] 4.2 Implement template create, list, read, update, and delete APIs (#4)
-- [ ] 4.3 Support global templates with optional account association (#4)
-- [ ] 4.4 Validate required unified transaction mappings before saving or applying templates (#4)
-- [ ] 4.5 Implement frontend template selection during upload preparation (#4)
-- [ ] 4.6 Implement frontend template editor for field mappings and transform settings (#4)
+- [x] 4.1 Define backend validation models for structured import template configuration (#4)
+- [x] 4.2 Implement template create, list, read, update, and delete APIs (#4)
+- [x] 4.3 Support global templates with optional account association (#4)
+- [x] 4.4 Validate required unified transaction mappings before saving or applying templates (#4)
+- [x] 4.5 Implement frontend template selection during upload preparation (#4)
+- [x] 4.6 Implement frontend template editor for field mappings and transform settings (#4)
 
 ## 5. Transaction Transform Engine
 
