@@ -174,7 +174,9 @@ input[type="file"] {
 }
 
 .table-wrap {
+  max-height: 420px;
   overflow-x: auto;
+  overflow-y: auto;
   border: 1px solid #d7e0d2;
   border-radius: 18px;
   background: white;
@@ -195,6 +197,9 @@ td {
 }
 
 th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   color: #26371f;
   background: #f1f6ed;
   font-size: 0.82rem;
