@@ -19,6 +19,7 @@ from app.database import (
     Label,
     RawImportRow,
     Transaction,
+    TransactionLabelRule,
     UploadFile as StoredUploadFile,
     check_database,
     engine,
@@ -140,6 +141,36 @@ class ImportTemplateResponse(BaseModel):
     updated_at: str
 
 
+class LabelResponse(BaseModel):
+    id: int
+    slug: str
+    name: str
+
+
+class LabelRulePayload(BaseModel):
+    label_id: int
+    match_field: Literal["merchant", "description"]
+    pattern: str = Field(min_length=1)
+
+    @field_validator("pattern")
+    @classmethod
+    def non_blank_pattern(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Match pattern must not be blank.")
+        return value.strip()
+
+
+class LabelRuleResponse(BaseModel):
+    id: int
+    label_id: int
+    label_slug: str
+    label_name: str
+    match_field: str
+    pattern: str
+    created_at: str
+    applied_count: int | None = None
+
+
 def serialize_template(template: ImportTemplate) -> ImportTemplateResponse:
     if template.id is None:
         raise HTTPException(status_code=500, detail="Saved template is missing an id.")
@@ -150,6 +181,27 @@ def serialize_template(template: ImportTemplate) -> ImportTemplateResponse:
         config=ImportTemplateConfig.model_validate(template.config),
         created_at=template.created_at.isoformat(),
         updated_at=template.updated_at.isoformat(),
+    )
+
+
+def serialize_label(label: Label) -> LabelResponse:
+    if label.id is None:
+        raise HTTPException(status_code=500, detail="Saved label is missing an id.")
+    return LabelResponse(id=label.id, slug=label.slug, name=label.name)
+
+
+def serialize_label_rule(rule: TransactionLabelRule, label: Label, applied_count: int | None = None) -> LabelRuleResponse:
+    if rule.id is None:
+        raise HTTPException(status_code=500, detail="Saved label rule is missing an id.")
+    return LabelRuleResponse(
+        id=rule.id,
+        label_id=rule.label_id,
+        label_slug=label.slug,
+        label_name=label.name,
+        match_field=rule.match_field,
+        pattern=rule.pattern,
+        created_at=rule.created_at.isoformat(),
+        applied_count=applied_count,
     )
 
 
@@ -410,6 +462,43 @@ def validate_label_ids(session: Session, transactions: list[Transaction]) -> Non
             raise HTTPException(status_code=404, detail=f"Label not found: {label_id}")
 
 
+def get_uncategorized_label(session: Session) -> Label:
+    label = session.exec(select(Label).where(Label.slug == "uncategorized")).first()
+    if label is None or label.id is None:
+        raise HTTPException(status_code=500, detail="Uncategorized label is not seeded.")
+    return label
+
+
+def label_rule_matches(rule: TransactionLabelRule, transaction: Transaction) -> bool:
+    source_value = transaction.merchant if rule.match_field == "merchant" else transaction.description
+    if source_value is None:
+        return False
+    return rule.pattern.casefold() in source_value.casefold()
+
+
+def apply_label_rules_to_transactions(session: Session, transactions: list[Transaction]) -> None:
+    rules = session.exec(select(TransactionLabelRule).order_by(col(TransactionLabelRule.created_at), col(TransactionLabelRule.id))).all()
+    uncategorized = get_uncategorized_label(session)
+    for transaction in transactions:
+        if transaction.label_id is not None:
+            continue
+        matching_rule = next((rule for rule in rules if label_rule_matches(rule, transaction)), None)
+        transaction.label_id = matching_rule.label_id if matching_rule is not None else uncategorized.id
+
+
+def apply_label_rule_to_existing_transactions(session: Session, rule: TransactionLabelRule) -> int:
+    uncategorized = get_uncategorized_label(session)
+    transactions = session.exec(select(Transaction)).all()
+    applied_count = 0
+    for transaction in transactions:
+        is_unlabeled = transaction.label_id is None or transaction.label_id == uncategorized.id
+        if is_unlabeled and label_rule_matches(rule, transaction):
+            transaction.label_id = rule.label_id
+            session.add(transaction)
+            applied_count += 1
+    return applied_count
+
+
 def raw_rows_to_transactions(upload: StoredUploadFile, raw_rows: list[RawImportRow], config: ImportTemplateConfig) -> list[Transaction]:
     return [build_transaction(upload, raw_row, transform_raw_row(raw_row.raw_data, config)) for raw_row in raw_rows]
 
@@ -534,6 +623,7 @@ def confirm_import(payload: ConfirmImportPayload) -> ConfirmImportResponse:
         ).all()
         transactions = raw_rows_to_transactions(upload, list(raw_rows), payload.template_config)
         validate_label_ids(session, transactions)
+        apply_label_rules_to_transactions(session, transactions)
         duplicate_candidates = find_duplicate_candidates(session, transactions)
         if duplicate_candidates and not payload.allow_duplicates:
             upload.status = "duplicate_warning"
@@ -555,6 +645,48 @@ def confirm_import(payload: ConfirmImportPayload) -> ConfirmImportResponse:
         inserted_count=len(transactions),
         duplicate_candidates=duplicate_candidates,
     )
+
+
+@app.get("/labels")
+def list_labels() -> list[LabelResponse]:
+    with Session(engine) as session:
+        labels = session.exec(select(Label).order_by(Label.name)).all()
+    return [serialize_label(label) for label in labels]
+
+
+@app.get("/transaction-label-rules")
+def list_transaction_label_rules() -> list[LabelRuleResponse]:
+    with Session(engine) as session:
+        rules = session.exec(select(TransactionLabelRule).order_by(col(TransactionLabelRule.created_at), col(TransactionLabelRule.id))).all()
+        responses: list[LabelRuleResponse] = []
+        for rule in rules:
+            label = session.get(Label, rule.label_id)
+            if label is None:
+                raise HTTPException(status_code=500, detail="Label rule references a missing label.")
+            responses.append(serialize_label_rule(rule, label))
+    return responses
+
+
+@app.post("/transaction-label-rules", status_code=201)
+def create_transaction_label_rule(payload: LabelRulePayload) -> LabelRuleResponse:
+    with Session(engine) as session:
+        label = session.get(Label, payload.label_id)
+        if label is None:
+            raise HTTPException(status_code=404, detail="Label not found.")
+
+        rule = TransactionLabelRule(
+            label_id=payload.label_id,
+            match_field=payload.match_field,
+            pattern=payload.pattern,
+        )
+        session.add(rule)
+        session.commit()
+        session.refresh(rule)
+        applied_count = apply_label_rule_to_existing_transactions(session, rule)
+        session.commit()
+        session.refresh(rule)
+        session.refresh(label)
+        return serialize_label_rule(rule, label, applied_count)
 
 
 @app.post("/import-templates", status_code=201)

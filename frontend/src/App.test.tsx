@@ -3,18 +3,33 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
-import { createImportTemplate, getHealth, listImportTemplates, previewCsv, updateImportTemplate } from "./api/client";
+import {
+  createLabelRule,
+  createImportTemplate,
+  getHealth,
+  listLabelRules,
+  listLabels,
+  listImportTemplates,
+  previewCsv,
+  updateImportTemplate,
+} from "./api/client";
 
 vi.mock("./api/client", () => ({
+  createLabelRule: vi.fn(),
   createImportTemplate: vi.fn(),
   getHealth: vi.fn(),
+  listLabelRules: vi.fn(),
+  listLabels: vi.fn(),
   listImportTemplates: vi.fn(),
   previewCsv: vi.fn(),
   updateImportTemplate: vi.fn(),
 }));
 
+const mockedCreateLabelRule = vi.mocked(createLabelRule);
 const mockedCreateImportTemplate = vi.mocked(createImportTemplate);
 const mockedGetHealth = vi.mocked(getHealth);
+const mockedListLabelRules = vi.mocked(listLabelRules);
+const mockedListLabels = vi.mocked(listLabels);
 const mockedListImportTemplates = vi.mocked(listImportTemplates);
 const mockedPreviewCsv = vi.mocked(previewCsv);
 const mockedUpdateImportTemplate = vi.mocked(updateImportTemplate);
@@ -26,8 +41,14 @@ describe("App", () => {
 
   beforeEach(() => {
     mockedGetHealth.mockResolvedValue({ status: "ok", database: "ok" });
+    mockedListLabels.mockResolvedValue([
+      { id: 1, slug: "uncategorized", name: "Uncategorized" },
+      { id: 2, slug: "dining", name: "Dining" },
+    ]);
+    mockedListLabelRules.mockResolvedValue([]);
     mockedListImportTemplates.mockResolvedValue([]);
     mockedPreviewCsv.mockReset();
+    mockedCreateLabelRule.mockReset();
     mockedCreateImportTemplate.mockReset();
     mockedUpdateImportTemplate.mockReset();
   });
@@ -189,5 +210,46 @@ describe("App", () => {
       7,
       expect.objectContaining({ account_id: 42 }),
     );
+  });
+
+  it("creates label rules with fixed labels and no custom label action", async () => {
+    mockedListLabelRules.mockResolvedValue([
+      {
+        id: 3,
+        label_id: 2,
+        label_slug: "dining",
+        label_name: "Dining",
+        match_field: "description",
+        pattern: "Cafe",
+        created_at: "2026-01-01T00:00:00+00:00",
+      },
+    ]);
+    mockedCreateLabelRule.mockResolvedValue({
+      id: 4,
+      label_id: 2,
+      label_slug: "dining",
+      label_name: "Dining",
+      match_field: "merchant",
+      pattern: "Bistro",
+      created_at: "2026-01-02T00:00:00+00:00",
+      applied_count: 2,
+    });
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Transaction Labeling")).toBeInTheDocument();
+    expect(screen.getByText('description contains "Cafe"')).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /custom label/i })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Match field"), { target: { value: "merchant" } });
+    fireEvent.change(screen.getByLabelText("Match text"), { target: { value: "Bistro" } });
+    fireEvent.change(screen.getByLabelText("Fixed label"), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Label Rule" }));
+
+    expect(await screen.findByText("Rule saved. Applied to 2 existing transactions.")).toBeInTheDocument();
+    expect(mockedCreateLabelRule).toHaveBeenCalledWith({ label_id: 2, match_field: "merchant", pattern: "Bistro" });
   });
 });

@@ -54,13 +54,13 @@
 
 ## 7. Transaction Labeling
 
-- [ ] 7.1 Implement backend APIs to list fixed labels and existing label rules (#7)
-- [ ] 7.2 Implement backend API to create merchant or description match rules using predefined labels only (#7)
-- [ ] 7.3 Apply label rules to matching existing transactions (#7)
-- [ ] 7.4 Apply saved label rules to newly imported transactions (#7)
-- [ ] 7.5 Ensure unmatched transactions resolve to uncategorized in label-based views (#7)
-- [ ] 7.6 Implement frontend transaction labeling UI for creating match rules and assigning predefined labels (#7)
-- [ ] 7.7 Add labeling tests for fixed labels, custom label prevention, rule application, future import matching, and uncategorized fallback (#7)
+- [x] 7.1 Implement backend APIs to list fixed labels and existing label rules (#7)
+- [x] 7.2 Implement backend API to create merchant or description match rules using predefined labels only (#7)
+- [x] 7.3 Apply label rules to matching existing transactions (#7)
+- [x] 7.4 Apply saved label rules to newly imported transactions (#7)
+- [x] 7.5 Ensure unmatched transactions resolve to uncategorized in label-based views (#7)
+- [x] 7.6 Implement frontend transaction labeling UI for creating match rules and assigning predefined labels (#7)
+- [x] 7.7 Add labeling tests for fixed labels, custom label prevention, rule application, future import matching, and uncategorized fallback (#7)
 
 ## 8. Finance Dashboard
 
