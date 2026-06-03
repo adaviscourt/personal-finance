@@ -1,6 +1,7 @@
 from datetime import date
 import json
 from decimal import Decimal
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
@@ -52,7 +53,7 @@ def prepare_import(client: TestClient, account_id: int, csv_file: str):
 
 def test_prepare_persists_upload_and_raw_rows_without_transactions() -> None:
     client = TestClient(app)
-    account = create_account("Issue 6 Prepare Account")
+    account = create_account(f"Issue 6 Prepare Account {uuid4()}")
 
     response = prepare_import(
         client,
@@ -90,7 +91,7 @@ def test_prepare_persists_upload_and_raw_rows_without_transactions() -> None:
 
 def test_confirm_import_inserts_unified_transactions_with_source_links() -> None:
     client = TestClient(app)
-    account = create_account("Issue 6 Confirm Account")
+    account = create_account(f"Issue 6 Confirm Account {uuid4()}")
     prepare_response = prepare_import(
         client,
         account.id or 0,
@@ -127,9 +128,8 @@ def test_confirm_import_inserts_unified_transactions_with_source_links() -> None
 
 def test_confirm_import_warns_about_duplicates_before_inserting() -> None:
     client = TestClient(app)
-    account = create_account("Issue 6 Duplicate Account")
+    account = create_account(f"Issue 6 Duplicate Account {uuid4()}")
     normalized_description_value = normalize_description("Coffee Shop")
-    transaction_date = "2026-03-01"
     with Session(engine) as session:
         transaction_date = date.fromisoformat("2026-03-01")
         existing = Transaction(

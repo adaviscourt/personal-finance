@@ -414,6 +414,17 @@ def raw_rows_to_transactions(upload: StoredUploadFile, raw_rows: list[RawImportR
     return [build_transaction(upload, raw_row, transform_raw_row(raw_row.raw_data, config)) for raw_row in raw_rows]
 
 
+def transformed_rows_to_transactions(
+    upload: StoredUploadFile,
+    raw_rows: list[RawImportRow],
+    transformed_rows: list[dict[str, Any]],
+) -> list[Transaction]:
+    return [
+        build_transaction(upload, raw_row, transformed_row)
+        for raw_row, transformed_row in zip(raw_rows, transformed_rows, strict=True)
+    ]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -473,6 +484,7 @@ async def prepare_import(
     frame = await read_csv_frame(file)
     config = parse_template_config(template_config)
     raw_rows = frame.to_dicts()
+    transformed_rows = [transform_raw_row(row, config) for row in raw_rows]
 
     with Session(engine) as session:
         if session.get(Account, account_id) is None:
@@ -497,13 +509,13 @@ async def prepare_import(
         for stored_row in stored_rows:
             session.refresh(stored_row)
 
-        transactions = raw_rows_to_transactions(upload, stored_rows, config)
+        transactions = transformed_rows_to_transactions(upload, stored_rows, transformed_rows)
         duplicate_candidates = find_duplicate_candidates(session, transactions)
 
     return ImportPrepareResponse(
         upload_file_id=upload.id,
         row_count=len(raw_rows),
-        transformed_preview=transform_rows(frame, config),
+        transformed_preview=transformed_rows[:5],
         duplicate_candidates=duplicate_candidates,
     )
 
