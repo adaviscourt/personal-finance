@@ -33,14 +33,14 @@
 
 ## 5. Transaction Transform Engine
 
-- [ ] 5.1 Implement supported transform dispatch that rejects unknown transform types (#5)
-- [ ] 5.2 Implement `copy_column`, `parse_date`, `parse_numeric`, and `absolute_numeric` transforms (#5)
-- [ ] 5.3 Implement `signed_amount_direction` for deriving debit or credit from a signed amount column (#5)
-- [ ] 5.4 Implement `split_amount_direction` for deriving debit or credit from separate debit and credit columns (#5)
-- [ ] 5.5 Implement `value_lookup` for mapping unique source values to debit or credit (#5)
-- [ ] 5.6 Add API support to return unique values for a selected source column during template configuration (#5)
-- [ ] 5.7 Implement transformed preview generation using selected template configuration (#5)
-- [ ] 5.8 Add transform tests covering signed amount, split columns, value lookup, unsupported transforms, and transformed preview output (#5)
+- [x] 5.1 Implement supported transform dispatch that rejects unknown transform types (#5)
+- [x] 5.2 Implement `copy_column`, `parse_date`, `parse_numeric`, and `absolute_numeric` transforms (#5)
+- [x] 5.3 Implement `signed_amount_direction` for deriving debit or credit from a signed amount column (#5)
+- [x] 5.4 Implement `split_amount_direction` for deriving debit or credit from separate debit and credit columns (#5)
+- [x] 5.5 Implement `value_lookup` for mapping unique source values to debit or credit (#5)
+- [x] 5.6 Add API support to return unique values for a selected source column during template configuration (#5)
+- [x] 5.7 Implement transformed preview generation using selected template configuration (#5)
+- [x] 5.8 Add transform tests covering signed amount, split columns, value lookup, unsupported transforms, and transformed preview output (#5)
 
 ## 6. Transaction Import
 
