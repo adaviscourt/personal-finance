@@ -62,6 +62,28 @@ export type TransformedPreviewResponse = {
   rows: Record<string, string | null>[];
 };
 
+export type DuplicateCandidate = {
+  row_number: number;
+  existing_transaction_id: number;
+  date: string;
+  description: string;
+  amount: string;
+  direction: "debit" | "credit";
+};
+
+export type ImportPrepareResponse = {
+  upload_file_id: number;
+  row_count: number;
+  transformed_preview: Record<string, string | null>[];
+  duplicate_candidates: DuplicateCandidate[];
+};
+
+export type ConfirmImportResponse = {
+  upload_file_id: number;
+  inserted_count: number;
+  duplicate_candidates: DuplicateCandidate[];
+};
+
 export async function getHealth(): Promise<HealthResponse> {
   const response = await api.get<HealthResponse>("/health");
   return response.data;
@@ -93,6 +115,33 @@ export async function previewTransformedCsv(
   formData.append("template_config", JSON.stringify(templateConfig));
 
   const response = await api.post<TransformedPreviewResponse>("/imports/transformed-preview", formData);
+  return response.data;
+}
+
+export async function prepareImport(
+  file: File,
+  accountId: number,
+  templateConfig: ImportTemplateConfig,
+): Promise<ImportPrepareResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("account_id", String(accountId));
+  formData.append("template_config", JSON.stringify(templateConfig));
+
+  const response = await api.post<ImportPrepareResponse>("/imports/prepare", formData);
+  return response.data;
+}
+
+export async function confirmImport(
+  uploadFileId: number,
+  templateConfig: ImportTemplateConfig,
+  allowDuplicates = false,
+): Promise<ConfirmImportResponse> {
+  const response = await api.post<ConfirmImportResponse>("/imports/confirm", {
+    upload_file_id: uploadFileId,
+    template_config: templateConfig,
+    allow_duplicates: allowDuplicates,
+  });
   return response.data;
 }
 

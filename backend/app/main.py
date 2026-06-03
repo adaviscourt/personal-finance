@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+import hashlib
 from io import BytesIO
 import json
 from typing import Any, Literal
@@ -12,7 +13,18 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 from sqlalchemy import or_
 from sqlmodel import Session, col, select
 
-from app.database import Account, ImportTemplate, check_database, engine, init_db, utc_now
+from app.database import (
+    Account,
+    ImportTemplate,
+    Label,
+    RawImportRow,
+    Transaction,
+    UploadFile as StoredUploadFile,
+    check_database,
+    engine,
+    init_db,
+    utc_now,
+)
 
 
 MAX_PREVIEW_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -85,6 +97,25 @@ class ImportTemplateConfig(BaseModel):
         if missing_fields:
             raise ValueError(f"Missing required mappings: {', '.join(missing_fields)}")
         return self
+
+
+class ImportPrepareResponse(BaseModel):
+    upload_file_id: int
+    row_count: int
+    transformed_preview: list[dict[str, Any]]
+    duplicate_candidates: list[dict[str, Any]]
+
+
+class ConfirmImportPayload(BaseModel):
+    upload_file_id: int
+    template_config: ImportTemplateConfig
+    allow_duplicates: bool = False
+
+
+class ConfirmImportResponse(BaseModel):
+    upload_file_id: int
+    inserted_count: int
+    duplicate_candidates: list[dict[str, Any]]
 
 
 class ImportTemplatePayload(BaseModel):
@@ -191,6 +222,10 @@ def serialize_decimal(value: Decimal | None) -> str | None:
     return str(value)
 
 
+def normalize_decimal(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"))
+
+
 def parse_date_value(value: Any) -> str | None:
     if value is None or (isinstance(value, str) and not value.strip()):
         return None
@@ -244,10 +279,150 @@ def apply_transform(row: dict[str, Any], mapping: TemplateFieldMapping) -> Any:
 def transform_rows(frame: pl.DataFrame, config: ImportTemplateConfig, limit: int = 5) -> list[dict[str, Any]]:
     transformed_rows: list[dict[str, Any]] = []
     for row in frame.head(limit).to_dicts():
-        transformed_rows.append(
-            {target_field: apply_transform(row, mapping) for target_field, mapping in config.mappings.items()}
-        )
+        transformed_rows.append(transform_raw_row(row, config))
     return transformed_rows
+
+
+def transform_raw_row(row: dict[str, Any], config: ImportTemplateConfig) -> dict[str, Any]:
+    return {target_field: apply_transform(row, mapping) for target_field, mapping in config.mappings.items()}
+
+
+def normalize_description(description: str) -> str:
+    return " ".join(description.casefold().split())
+
+
+def duplicate_fingerprint(
+    account_id: int,
+    transaction_date: date,
+    normalized_description_value: str,
+    amount: Decimal,
+    direction: str,
+) -> str:
+    source = "|".join(
+        [
+            str(account_id),
+            transaction_date.isoformat(),
+            normalized_description_value,
+            str(normalize_decimal(amount)),
+            direction,
+        ]
+    )
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def require_string_field(row: dict[str, Any], field_name: str, row_number: int) -> str:
+    value = row.get(field_name)
+    if value is None or not str(value).strip():
+        raise HTTPException(status_code=400, detail=f"Row {row_number} missing required field: {field_name}")
+    return str(value).strip()
+
+
+def optional_string_field(row: dict[str, Any], field_name: str) -> str | None:
+    value = row.get(field_name)
+    if value is None or not str(value).strip():
+        return None
+    return str(value).strip()
+
+
+def build_transaction(upload: StoredUploadFile, raw_row: RawImportRow, transformed_row: dict[str, Any]) -> Transaction:
+    if upload.id is None or raw_row.id is None or upload.account_id is None:
+        raise HTTPException(status_code=500, detail="Import source context is incomplete.")
+
+    row_number = raw_row.row_number
+    transaction_date_text = require_string_field(transformed_row, "date", row_number)
+    try:
+        transaction_date = date.fromisoformat(transaction_date_text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Row {row_number} has invalid date: {transaction_date_text}") from exc
+
+    description = require_string_field(transformed_row, "description", row_number)
+    amount = parse_decimal_value(require_string_field(transformed_row, "amount", row_number))
+    if amount is None:
+        raise HTTPException(status_code=400, detail=f"Row {row_number} missing required field: amount")
+    amount = normalize_decimal(abs(amount))
+
+    direction = require_string_field(transformed_row, "direction", row_number)
+    if direction not in {"debit", "credit"}:
+        raise HTTPException(status_code=400, detail=f"Row {row_number} has invalid direction: {direction}")
+
+    balance = parse_decimal_value(transformed_row.get("balance"))
+    normalized_description_value = normalize_description(description)
+    fingerprint = duplicate_fingerprint(
+        upload.account_id,
+        transaction_date,
+        normalized_description_value,
+        amount,
+        direction,
+    )
+    label_id = transformed_row.get("label_id")
+
+    return Transaction(
+        account_id=upload.account_id,
+        upload_file_id=upload.id,
+        raw_import_row_id=raw_row.id,
+        label_id=int(label_id) if label_id is not None else None,
+        transaction_date=transaction_date,
+        transaction_month=transaction_date.isoformat()[:7],
+        description=description,
+        normalized_description=normalized_description_value,
+        merchant=optional_string_field(transformed_row, "merchant"),
+        amount=amount,
+        direction=direction,
+        source_type=optional_string_field(transformed_row, "source_type"),
+        source_category=optional_string_field(transformed_row, "source_category"),
+        check_number=optional_string_field(transformed_row, "check_number"),
+        balance=normalize_decimal(balance) if balance is not None else None,
+        duplicate_fingerprint=fingerprint,
+    )
+
+
+def find_duplicate_candidates(session: Session, transactions: list[Transaction]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for index, transaction in enumerate(transactions):
+        existing = session.exec(
+            select(Transaction).where(
+                Transaction.account_id == transaction.account_id,
+                Transaction.transaction_date == transaction.transaction_date,
+                Transaction.normalized_description == transaction.normalized_description,
+                Transaction.amount == transaction.amount,
+                Transaction.direction == transaction.direction,
+            )
+        ).first()
+        if existing is None:
+            continue
+        candidates.append(
+            {
+                "row_number": index + 1,
+                "existing_transaction_id": existing.id,
+                "date": transaction.transaction_date.isoformat(),
+                "description": transaction.description,
+                "amount": serialize_decimal(transaction.amount),
+                "direction": transaction.direction,
+            }
+        )
+    return candidates
+
+
+def validate_label_ids(session: Session, transactions: list[Transaction]) -> None:
+    label_ids = {transaction.label_id for transaction in transactions if transaction.label_id is not None}
+    for label_id in label_ids:
+        if session.get(Label, label_id) is None:
+            raise HTTPException(status_code=404, detail=f"Label not found: {label_id}")
+
+
+def raw_rows_to_transactions(upload: StoredUploadFile, raw_rows: list[RawImportRow], config: ImportTemplateConfig) -> list[Transaction]:
+    return [build_transaction(upload, raw_row, transform_raw_row(raw_row.raw_data, config)) for raw_row in raw_rows]
+
+
+def transformed_rows_to_transactions(
+    upload: StoredUploadFile,
+    raw_rows: list[RawImportRow],
+    transformed_rows: list[dict[str, Any]],
+) -> list[Transaction]:
+    return [
+        build_transaction(upload, raw_row, transformed_row)
+        for raw_row, transformed_row in zip(raw_rows, transformed_rows, strict=True)
+    ]
 
 
 @asynccontextmanager
@@ -298,6 +473,88 @@ async def preview_transformed_import(
     frame = await read_csv_frame(file)
     config = parse_template_config(template_config)
     return TransformedPreviewResponse(rows=transform_rows(frame, config))
+
+
+@app.post("/imports/prepare", status_code=201)
+async def prepare_import(
+    file: UploadFile,
+    account_id: int = Form(...),
+    template_config: str = Form(...),
+) -> ImportPrepareResponse:
+    frame = await read_csv_frame(file)
+    config = parse_template_config(template_config)
+    raw_rows = frame.to_dicts()
+    transformed_rows = [transform_raw_row(row, config) for row in raw_rows]
+
+    with Session(engine) as session:
+        if session.get(Account, account_id) is None:
+            raise HTTPException(status_code=404, detail="Account not found.")
+
+        upload = StoredUploadFile(
+            account_id=account_id,
+            original_filename=file.filename or "upload.csv",
+            content_type=file.content_type,
+            row_count=len(raw_rows),
+            status="prepared",
+        )
+        session.add(upload)
+        session.commit()
+        session.refresh(upload)
+        if upload.id is None:
+            raise HTTPException(status_code=500, detail="Saved upload is missing an id.")
+
+        stored_rows = [RawImportRow(upload_file_id=upload.id, row_number=index, raw_data=row) for index, row in enumerate(raw_rows, 1)]
+        session.add_all(stored_rows)
+        session.commit()
+        for stored_row in stored_rows:
+            session.refresh(stored_row)
+
+        transactions = transformed_rows_to_transactions(upload, stored_rows, transformed_rows)
+        duplicate_candidates = find_duplicate_candidates(session, transactions)
+
+    return ImportPrepareResponse(
+        upload_file_id=upload.id,
+        row_count=len(raw_rows),
+        transformed_preview=transformed_rows[:5],
+        duplicate_candidates=duplicate_candidates,
+    )
+
+
+@app.post("/imports/confirm")
+def confirm_import(payload: ConfirmImportPayload) -> ConfirmImportResponse:
+    with Session(engine) as session:
+        upload = session.get(StoredUploadFile, payload.upload_file_id)
+        if upload is None:
+            raise HTTPException(status_code=404, detail="Upload file not found.")
+
+        raw_rows = session.exec(
+            select(RawImportRow)
+            .where(RawImportRow.upload_file_id == payload.upload_file_id)
+            .order_by(col(RawImportRow.row_number))
+        ).all()
+        transactions = raw_rows_to_transactions(upload, list(raw_rows), payload.template_config)
+        validate_label_ids(session, transactions)
+        duplicate_candidates = find_duplicate_candidates(session, transactions)
+        if duplicate_candidates and not payload.allow_duplicates:
+            upload.status = "duplicate_warning"
+            session.add(upload)
+            session.commit()
+            return ConfirmImportResponse(
+                upload_file_id=payload.upload_file_id,
+                inserted_count=0,
+                duplicate_candidates=duplicate_candidates,
+            )
+
+        session.add_all(transactions)
+        upload.status = "imported"
+        session.add(upload)
+        session.commit()
+
+    return ConfirmImportResponse(
+        upload_file_id=payload.upload_file_id,
+        inserted_count=len(transactions),
+        duplicate_candidates=duplicate_candidates,
+    )
 
 
 @app.post("/import-templates", status_code=201)
