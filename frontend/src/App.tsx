@@ -3,8 +3,11 @@ import type { FormEvent } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
 import {
+  createLabelRule,
   createImportTemplate,
   getHealth,
+  listLabelRules,
+  listLabels,
   listImportTemplates,
   previewCsv,
   updateImportTemplate,
@@ -12,7 +15,9 @@ import {
   type HealthResponse,
   type ImportTemplate,
   type ImportTemplateConfig,
+  type LabelRule,
   type TemplateTransform,
+  type TransactionLabel,
 } from "./api/client";
 import "./App.css";
 
@@ -50,6 +55,14 @@ function Home() {
   const [templateStatus, setTemplateStatus] = useState<string | null>(null);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateSaving, setTemplateSaving] = useState(false);
+  const [labels, setLabels] = useState<TransactionLabel[]>([]);
+  const [labelRules, setLabelRules] = useState<LabelRule[]>([]);
+  const [labelRuleField, setLabelRuleField] = useState<"merchant" | "description">("description");
+  const [labelRulePattern, setLabelRulePattern] = useState("");
+  const [labelRuleLabelId, setLabelRuleLabelId] = useState<number | "">("");
+  const [labelRuleStatus, setLabelRuleStatus] = useState<string | null>(null);
+  const [labelRuleError, setLabelRuleError] = useState<string | null>(null);
+  const [labelRuleSaving, setLabelRuleSaving] = useState(false);
   const previewRequestId = useRef(0);
 
   useEffect(() => {
@@ -76,6 +89,16 @@ function Home() {
     listImportTemplates()
       .then(setTemplates)
       .catch(() => setTemplateError("Could not load import templates."));
+  }, []);
+
+  useEffect(() => {
+    Promise.all([listLabels(), listLabelRules()])
+      .then(([nextLabels, nextRules]) => {
+        setLabels(nextLabels);
+        setLabelRules(nextRules);
+        setLabelRuleLabelId(nextLabels[0]?.id ?? "");
+      })
+      .catch(() => setLabelRuleError("Could not load transaction labels."));
   }, []);
 
   function applyTemplateToDraft(template: ImportTemplate) {
@@ -175,6 +198,37 @@ function Home() {
       if (requestId === previewRequestId.current) {
         setPreviewLoading(false);
       }
+    }
+  }
+
+  async function handleLabelRuleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLabelRuleStatus(null);
+    setLabelRuleError(null);
+
+    if (!labelRulePattern.trim()) {
+      setLabelRuleError("Enter merchant or description text to match.");
+      return;
+    }
+    if (labelRuleLabelId === "") {
+      setLabelRuleError("Choose one of the fixed labels.");
+      return;
+    }
+
+    setLabelRuleSaving(true);
+    try {
+      const savedRule = await createLabelRule({
+        label_id: labelRuleLabelId,
+        match_field: labelRuleField,
+        pattern: labelRulePattern,
+      });
+      setLabelRules((currentRules) => [...currentRules, savedRule]);
+      setLabelRulePattern("");
+      setLabelRuleStatus(`Rule saved. Applied to ${savedRule.applied_count ?? 0} existing transactions.`);
+    } catch {
+      setLabelRuleError("Could not save that rule. Use a predefined label and valid match text.");
+    } finally {
+      setLabelRuleSaving(false);
     }
   }
 
@@ -345,6 +399,58 @@ function Home() {
             </div>
           </div>
         ) : null}
+      </section>
+      <section className="label-panel" aria-labelledby="label-heading">
+        <p className="eyebrow">Transaction Labeling</p>
+        <h2 id="label-heading">Save reusable match rules.</h2>
+        <p className="label-intro">
+          Assign fixed labels by matching merchant or description text. Custom labels are not available in the MVP;
+          unmatched transactions stay uncategorized.
+        </p>
+        <form className="label-rule-form" onSubmit={handleLabelRuleSubmit}>
+          <label>
+            <span>Match field</span>
+            <select value={labelRuleField} onChange={(event) => setLabelRuleField(event.target.value as "merchant" | "description")}>
+              <option value="description">Description</option>
+              <option value="merchant">Merchant</option>
+            </select>
+          </label>
+          <label>
+            <span>Match text</span>
+            <input
+              value={labelRulePattern}
+              onChange={(event) => setLabelRulePattern(event.target.value)}
+              placeholder="Target, Payroll, Netflix"
+            />
+          </label>
+          <label>
+            <span>Fixed label</span>
+            <select
+              value={labelRuleLabelId}
+              onChange={(event) => setLabelRuleLabelId(event.target.value ? Number(event.target.value) : "")}
+            >
+              {labels.map((label) => (
+                <option key={label.id} value={label.id}>
+                  {label.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" disabled={labelRuleSaving || labels.length === 0}>
+            {labelRuleSaving ? "Saving..." : "Save Label Rule"}
+          </button>
+        </form>
+        {labelRuleError ? <p className="preview-error">{labelRuleError}</p> : null}
+        {labelRuleStatus ? <p className="template-status">{labelRuleStatus}</p> : null}
+        <div className="rule-list" aria-label="Existing label rules">
+          {labelRules.length === 0 ? <p>No label rules yet.</p> : null}
+          {labelRules.map((rule) => (
+            <article key={rule.id}>
+              <strong>{rule.label_name}</strong>
+              <span>{rule.match_field} contains "{rule.pattern}"</span>
+            </article>
+          ))}
+        </div>
       </section>
     </main>
   );

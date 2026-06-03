@@ -84,6 +84,29 @@ export type ConfirmImportResponse = {
   duplicate_candidates: DuplicateCandidate[];
 };
 
+export type TransactionLabel = {
+  id: number;
+  slug: string;
+  name: string;
+};
+
+export type LabelRule = {
+  id: number;
+  label_id: number;
+  label_slug: string;
+  label_name: string;
+  match_field: "merchant" | "description";
+  pattern: string;
+  created_at: string;
+  applied_count?: number | null;
+};
+
+export type LabelRulePayload = {
+  label_id: number;
+  match_field: "merchant" | "description";
+  pattern: string;
+};
+
 export async function getHealth(): Promise<HealthResponse> {
   const response = await api.get<HealthResponse>("/health");
   return response.data;
@@ -160,5 +183,20 @@ export async function updateImportTemplate(
   payload: ImportTemplatePayload,
 ): Promise<ImportTemplate> {
   const response = await api.put<ImportTemplate>(`/import-templates/${templateId}`, payload);
+  return response.data;
+}
+
+export async function listLabels(): Promise<TransactionLabel[]> {
+  const response = await api.get<TransactionLabel[]>("/labels");
+  return response.data;
+}
+
+export async function listLabelRules(): Promise<LabelRule[]> {
+  const response = await api.get<LabelRule[]>("/transaction-label-rules");
+  return response.data;
+}
+
+export async function createLabelRule(payload: LabelRulePayload): Promise<LabelRule> {
+  const response = await api.post<LabelRule>("/transaction-label-rules", payload);
   return response.data;
 }
