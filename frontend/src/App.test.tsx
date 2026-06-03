@@ -6,6 +6,7 @@ import App from "./App";
 import {
   createLabelRule,
   createImportTemplate,
+  getDashboardSpendingByLabel,
   getHealth,
   listLabelRules,
   listLabels,
@@ -17,6 +18,7 @@ import {
 vi.mock("./api/client", () => ({
   createLabelRule: vi.fn(),
   createImportTemplate: vi.fn(),
+  getDashboardSpendingByLabel: vi.fn(),
   getHealth: vi.fn(),
   listLabelRules: vi.fn(),
   listLabels: vi.fn(),
@@ -27,6 +29,7 @@ vi.mock("./api/client", () => ({
 
 const mockedCreateLabelRule = vi.mocked(createLabelRule);
 const mockedCreateImportTemplate = vi.mocked(createImportTemplate);
+const mockedGetDashboardSpendingByLabel = vi.mocked(getDashboardSpendingByLabel);
 const mockedGetHealth = vi.mocked(getHealth);
 const mockedListLabelRules = vi.mocked(listLabelRules);
 const mockedListLabels = vi.mocked(listLabels);
@@ -51,6 +54,8 @@ describe("App", () => {
     mockedCreateLabelRule.mockReset();
     mockedCreateImportTemplate.mockReset();
     mockedUpdateImportTemplate.mockReset();
+    mockedGetDashboardSpendingByLabel.mockReset();
+    mockedGetDashboardSpendingByLabel.mockResolvedValue({ month: "2026-01", labels: [] });
   });
 
   it("renders the frontend health content", () => {
@@ -88,6 +93,46 @@ describe("App", () => {
     expect(screen.getAllByText("Date").length).toBeGreaterThan(0);
     expect(screen.getByText("Coffee")).toBeInTheDocument();
     expect(mockedPreviewCsv).toHaveBeenCalledWith(file);
+  });
+
+  it("loads dashboard spending for the selected month and renders debit label totals", async () => {
+    mockedGetDashboardSpendingByLabel.mockResolvedValue({
+      month: "2026-01",
+      labels: [
+        { label_slug: "groceries", label_name: "Groceries", amount: "25.25" },
+        { label_slug: "dining", label_name: "Dining", amount: "8.00" },
+      ],
+    });
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Monthly spending by label.")).toBeInTheDocument();
+    expect(await screen.findByText("Groceries")).toBeInTheDocument();
+    expect(screen.getByText("$25.25")).toBeInTheDocument();
+    expect(screen.getByText("Total debit spending: $33.25")).toBeInTheDocument();
+    expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/));
+  });
+
+  it("updates dashboard data when month changes and shows empty spending state", async () => {
+    mockedGetDashboardSpendingByLabel
+      .mockResolvedValueOnce({ month: "2026-01", labels: [{ label_slug: "dining", label_name: "Dining", amount: "8.00" }] })
+      .mockResolvedValueOnce({ month: "2026-02", labels: [] });
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Total debit spending: $8.00")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Dashboard month"), { target: { value: "2026-02" } });
+
+    expect(await screen.findByText("No spending data available for 2026-02.")).toBeInTheDocument();
+    expect(mockedGetDashboardSpendingByLabel).toHaveBeenLastCalledWith("2026-02");
   });
 
   it("saves a new import template from source column mappings", async () => {

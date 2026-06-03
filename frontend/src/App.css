@@ -32,6 +32,7 @@ a {
 }
 
 .upload-panel,
+.dashboard-panel,
 .label-panel {
   max-width: 1100px;
   margin: 28px auto 0;
@@ -40,6 +41,11 @@ a {
   border-radius: 28px;
   background: #fbfff8;
   box-shadow: 0 18px 60px rgba(54, 44, 31, 0.08);
+}
+
+.dashboard-panel {
+  border-color: #d8d0bd;
+  background: #fffdf7;
 }
 
 .label-panel {
@@ -158,6 +164,78 @@ select {
   color: white;
   font-weight: 900;
   cursor: pointer;
+}
+
+.dashboard-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.month-picker {
+  display: grid;
+  gap: 7px;
+  min-width: 220px;
+  color: #344055;
+  font-weight: 800;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(260px, 0.8fr);
+  gap: 20px;
+  align-items: stretch;
+}
+
+.chart-card,
+.dashboard-legend,
+.dashboard-empty {
+  border: 1px solid #e3dac8;
+  border-radius: 20px;
+  background: white;
+}
+
+.chart-card {
+  padding: 16px;
+}
+
+.chart-card strong {
+  display: block;
+  text-align: center;
+}
+
+.dashboard-legend {
+  display: grid;
+  align-content: center;
+  gap: 12px;
+  padding: 18px;
+}
+
+.dashboard-legend div {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.dashboard-legend span {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+}
+
+.dashboard-legend em {
+  color: #596473;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.dashboard-empty {
+  padding: 28px;
+  color: #596473;
+  font-weight: 800;
 }
 
 .upload-form button:disabled,
@@ -355,6 +433,10 @@ td {
     padding: 24px;
   }
 
+  .dashboard-panel {
+    padding: 24px;
+  }
+
   .label-panel {
     padding: 24px;
   }
@@ -369,6 +451,7 @@ td {
   }
 
   .mapping-row,
+  .dashboard-grid,
   .label-rule-form {
     grid-template-columns: 1fr;
   }
