@@ -44,13 +44,13 @@
 
 ## 6. Transaction Import
 
-- [ ] 6.1 Persist upload file records and raw parsed rows for import preparation (#6)
-- [ ] 6.2 Implement confirm-import API that inserts normalized transactions only after user confirmation (#6)
-- [ ] 6.3 Link imported transactions to their upload file and source raw row (#6)
-- [ ] 6.4 Persist unified transaction fields, including date, description, amount, direction, account, source metadata, optional balance, optional check number, and optional label (#6)
-- [ ] 6.5 Implement deterministic duplicate candidate detection using account, date, normalized description, amount, and direction (#6)
-- [ ] 6.6 Show duplicate candidate warnings before final insertion (#6)
-- [ ] 6.7 Add import tests covering confirmed import, unconfirmed preview, raw row storage, source links, and duplicate detection (#6)
+- [x] 6.1 Persist upload file records and raw parsed rows for import preparation (#6)
+- [x] 6.2 Implement confirm-import API that inserts normalized transactions only after user confirmation (#6)
+- [x] 6.3 Link imported transactions to their upload file and source raw row (#6)
+- [x] 6.4 Persist unified transaction fields, including date, description, amount, direction, account, source metadata, optional balance, optional check number, and optional label (#6)
+- [x] 6.5 Implement deterministic duplicate candidate detection using account, date, normalized description, amount, and direction (#6)
+- [x] 6.6 Show duplicate candidate warnings before final insertion (#6)
+- [x] 6.7 Add import tests covering confirmed import, unconfirmed preview, raw row storage, source links, and duplicate detection (#6)
 
 ## 7. Transaction Labeling
 
