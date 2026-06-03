@@ -97,13 +97,14 @@ def test_dashboard_excludes_credit_transactions_and_uses_uncategorized_fallback(
     account = create_account(f"Dashboard credit account {uuid4()}")
     add_transaction(account.id or 0, "2098-03-01", "Paycheck", "2000.00", "credit", "paychecks")
     add_transaction(account.id or 0, "2098-03-02", "Mystery", "12.34", "debit", None)
+    add_transaction(account.id or 0, "2098-03-03", "Known mystery", "1.00", "debit", "uncategorized")
 
     response = TestClient(app).get(f"/dashboard/spending-by-label?month={month}")
 
     assert response.status_code == 200
     assert response.json() == {
         "month": month,
-        "labels": [{"label_slug": "uncategorized", "label_name": "Uncategorized", "amount": "12.34"}],
+        "labels": [{"label_slug": "uncategorized", "label_name": "Uncategorized", "amount": "13.34"}],
     }
 
 

@@ -675,19 +675,21 @@ def get_dashboard_spending_by_label(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
 ) -> DashboardSpendingByLabelResponse:
     with Session(engine) as session:
+        uncategorized = get_uncategorized_label(session)
+        label_slug = func.coalesce(Label.slug, uncategorized.slug)
+        label_name = func.coalesce(Label.name, uncategorized.name)
         rows = session.exec(
-            select(Label.slug, Label.name, func.sum(Transaction.amount))
+            select(label_slug, label_name, func.sum(Transaction.amount))
             .join(Label, col(Transaction.label_id) == Label.id, isouter=True)
             .where(Transaction.transaction_month == month, Transaction.direction == "debit")
-            .group_by(Label.slug, Label.name)
-            .order_by(Label.name)
+            .group_by(label_slug, label_name)
+            .order_by(label_name)
         ).all()
-        uncategorized = get_uncategorized_label(session)
 
     labels = [
         DashboardSpendingByLabelItem(
-            label_slug=slug or uncategorized.slug,
-            label_name=name or uncategorized.name,
+            label_slug=slug,
+            label_name=name,
             amount=serialize_dashboard_amount(total),
         )
         for slug, name, total in rows
