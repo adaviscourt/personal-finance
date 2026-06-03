@@ -67,6 +67,10 @@ class TemplateFieldMapping(BaseModel):
 
         if not self.source_column:
             raise ValueError(f"{self.transform} requires source_column.")
+        if self.transform == "signed_amount_direction" and (
+            self.positive_direction is None or self.negative_direction is None
+        ):
+            raise ValueError("signed_amount_direction requires positive_direction and negative_direction.")
         if self.transform == "value_lookup" and not self.rules:
             raise ValueError("value_lookup requires rules.")
         return self
@@ -173,9 +177,12 @@ def parse_decimal_value(value: Any) -> Decimal | None:
         cleaned = str(value)
 
     try:
-        return Decimal(cleaned)
+        parsed_value = Decimal(cleaned)
     except InvalidOperation as exc:
         raise HTTPException(status_code=400, detail=f"Could not parse numeric value: {value}") from exc
+    if not parsed_value.is_finite():
+        raise HTTPException(status_code=400, detail=f"Could not parse numeric value: {value}")
+    return parsed_value
 
 
 def serialize_decimal(value: Decimal | None) -> str | None:

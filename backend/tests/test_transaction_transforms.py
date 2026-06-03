@@ -94,6 +94,37 @@ def test_transformed_preview_rejects_unsupported_transform() -> None:
     assert "python_eval" in str(response.json())
 
 
+def test_transformed_preview_rejects_missing_signed_amount_direction_config() -> None:
+    config = base_template_config(
+        {
+            "source_column": "Amount",
+            "transform": "signed_amount_direction",
+        }
+    )
+
+    response = post_transformed_preview("Date,Description,Amount\n2026-01-01,Coffee,-4.50\n", config)
+
+    assert response.status_code == 422
+    assert "signed_amount_direction requires positive_direction and negative_direction" in str(response.json())
+
+
+def test_transformed_preview_rejects_non_finite_numeric_values() -> None:
+    response = post_transformed_preview(
+        "Date,Description,Amount\n2026-01-01,Coffee,NaN\n",
+        base_template_config(
+            {
+                "source_column": "Amount",
+                "transform": "signed_amount_direction",
+                "positive_direction": "credit",
+                "negative_direction": "debit",
+            }
+        ),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Could not parse numeric value: NaN"}
+
+
 def test_unique_values_returns_source_column_values() -> None:
     client = TestClient(app)
 
