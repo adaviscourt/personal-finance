@@ -88,6 +88,7 @@ def test_new_rule_applies_to_matching_existing_transactions() -> None:
     client = TestClient(app)
     account = create_account(f"Issue 7 Existing Account {uuid4()}")
     groceries_id = label_id("groceries")
+    dining_id = label_id("dining")
     description = f"Market Basket {uuid4()}"
     normalized_description_value = normalize_description(description)
     with Session(engine) as session:
@@ -109,10 +110,31 @@ def test_new_rule_applies_to_matching_existing_transactions() -> None:
                 "debit",
             ),
         )
+        labeled_transaction = Transaction(
+            account_id=account.id or 0,
+            transaction_date=transaction_date,
+            transaction_month="2026-04",
+            description=f"Already labeled {description}",
+            normalized_description=normalize_description(f"Already labeled {description}"),
+            merchant="Market Basket",
+            label_id=dining_id,
+            amount=Decimal("18.22"),
+            direction="debit",
+            duplicate_fingerprint=duplicate_fingerprint(
+                account.id or 0,
+                transaction_date,
+                normalize_description(f"Already labeled {description}"),
+                Decimal("18.22"),
+                "debit",
+            ),
+        )
         session.add(transaction)
+        session.add(labeled_transaction)
         session.commit()
         session.refresh(transaction)
+        session.refresh(labeled_transaction)
         transaction_id = transaction.id
+        labeled_transaction_id = labeled_transaction.id
 
     response = client.post(
         "/transaction-label-rules",
@@ -123,8 +145,11 @@ def test_new_rule_applies_to_matching_existing_transactions() -> None:
     assert response.json()["applied_count"] >= 1
     with Session(engine) as session:
         updated_transaction = session.get(Transaction, transaction_id)
+        preserved_transaction = session.get(Transaction, labeled_transaction_id)
     assert updated_transaction is not None
     assert updated_transaction.label_id == groceries_id
+    assert preserved_transaction is not None
+    assert preserved_transaction.label_id == dining_id
 
 
 def test_saved_rules_apply_to_future_imports() -> None:

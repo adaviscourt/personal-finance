@@ -487,10 +487,12 @@ def apply_label_rules_to_transactions(session: Session, transactions: list[Trans
 
 
 def apply_label_rule_to_existing_transactions(session: Session, rule: TransactionLabelRule) -> int:
+    uncategorized = get_uncategorized_label(session)
     transactions = session.exec(select(Transaction)).all()
     applied_count = 0
     for transaction in transactions:
-        if label_rule_matches(rule, transaction):
+        is_unlabeled = transaction.label_id is None or transaction.label_id == uncategorized.id
+        if is_unlabeled and label_rule_matches(rule, transaction):
             transaction.label_id = rule.label_id
             session.add(transaction)
             applied_count += 1
