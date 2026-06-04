@@ -285,6 +285,7 @@ function Home() {
       setLabelRules((currentRules) => [...currentRules, savedRule]);
       setLabelRulePattern("");
       setLabelRuleStatus(`Rule saved. Applied to ${savedRule.applied_count ?? 0} existing transactions.`);
+      refreshDashboard();
     } catch {
       setLabelRuleError("Could not save that rule. Use a predefined label and valid match text.");
     } finally {

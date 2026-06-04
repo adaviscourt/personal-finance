@@ -304,6 +304,7 @@ describe("App", () => {
 
     expect(await screen.findByText("Rule saved. Applied to 2 existing transactions.")).toBeInTheDocument();
     expect(mockedCreateLabelRule).toHaveBeenCalledWith({ label_id: 2, match_field: "merchant", pattern: "Bistro" });
+    expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledTimes(2);
   });
 
   it("prepares and confirms an import from mapped preview rows", async () => {
