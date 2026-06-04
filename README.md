@@ -44,7 +44,7 @@ docker compose down -v
 
 1. Start Docker with `docker compose up --build`.
 2. Open `http://localhost:5173`.
-3. Upload one of the sample CSV fixtures from `samples/`.
+3. Upload `samples/signed-amount.csv` for the full UI workflow.
 4. Preview raw source rows and source columns.
 5. Map required fields: `date`, `description`, `amount`, and `direction`.
 6. Save or update an import template for reuse.
@@ -55,6 +55,6 @@ docker compose down -v
 
 ## Sample CSV Fixtures
 
-- `samples/signed-amount.csv` covers positive credit and negative debit direction from one signed amount column.
-- `samples/split-debit-credit.csv` covers separate debit and credit amount columns.
-- `samples/value-lookup-direction.csv` covers source value lookup direction mapping from a semantic flow column.
+- `samples/signed-amount.csv` covers positive credit and negative debit direction from one signed amount column and is ready for the current UI workflow.
+- `samples/split-debit-credit.csv` covers separate debit and credit amount columns for split-direction validation.
+- `samples/value-lookup-direction.csv` covers source value lookup direction mapping from a semantic flow column for lookup validation.
