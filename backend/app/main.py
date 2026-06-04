@@ -7,10 +7,10 @@ import json
 from typing import Any, Literal
 
 import polars as pl
-from fastapi import FastAPI, Form, HTTPException, Response, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Query, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlmodel import Session, col, select
 
 from app.database import (
@@ -171,6 +171,17 @@ class LabelRuleResponse(BaseModel):
     applied_count: int | None = None
 
 
+class DashboardSpendingByLabelItem(BaseModel):
+    label_slug: str
+    label_name: str
+    amount: str
+
+
+class DashboardSpendingByLabelResponse(BaseModel):
+    month: str
+    labels: list[DashboardSpendingByLabelItem]
+
+
 def serialize_template(template: ImportTemplate) -> ImportTemplateResponse:
     if template.id is None:
         raise HTTPException(status_code=500, detail="Saved template is missing an id.")
@@ -203,6 +214,11 @@ def serialize_label_rule(rule: TransactionLabelRule, label: Label, applied_count
         created_at=rule.created_at.isoformat(),
         applied_count=applied_count,
     )
+
+
+def serialize_dashboard_amount(value: Any) -> str:
+    amount = value if isinstance(value, Decimal) else Decimal(str(value))
+    return serialize_decimal(normalize_decimal(amount)) or "0.00"
 
 
 def validate_template_account(session: Session, account_id: int | None) -> None:
@@ -652,6 +668,34 @@ def list_labels() -> list[LabelResponse]:
     with Session(engine) as session:
         labels = session.exec(select(Label).order_by(Label.name)).all()
     return [serialize_label(label) for label in labels]
+
+
+@app.get("/dashboard/spending-by-label")
+def get_dashboard_spending_by_label(
+    month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+) -> DashboardSpendingByLabelResponse:
+    with Session(engine) as session:
+        uncategorized = get_uncategorized_label(session)
+        label_slug = func.coalesce(Label.slug, uncategorized.slug)
+        label_name = func.coalesce(Label.name, uncategorized.name)
+        rows = session.exec(
+            select(label_slug, label_name, func.sum(Transaction.amount))
+            .join(Label, col(Transaction.label_id) == Label.id, isouter=True)
+            .where(Transaction.transaction_month == month, Transaction.direction == "debit")
+            .group_by(label_slug, label_name)
+            .order_by(label_name)
+        ).all()
+
+    labels = [
+        DashboardSpendingByLabelItem(
+            label_slug=slug,
+            label_name=name,
+            amount=serialize_dashboard_amount(total),
+        )
+        for slug, name, total in rows
+        if total is not None
+    ]
+    return DashboardSpendingByLabelResponse(month=month, labels=labels)
 
 
 @app.get("/transaction-label-rules")

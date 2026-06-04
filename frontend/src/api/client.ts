@@ -107,6 +107,17 @@ export type LabelRulePayload = {
   pattern: string;
 };
 
+export type DashboardSpendingLabel = {
+  label_slug: string;
+  label_name: string;
+  amount: string;
+};
+
+export type DashboardSpendingByLabel = {
+  month: string;
+  labels: DashboardSpendingLabel[];
+};
+
 export async function getHealth(): Promise<HealthResponse> {
   const response = await api.get<HealthResponse>("/health");
   return response.data;
@@ -198,5 +209,10 @@ export async function listLabelRules(): Promise<LabelRule[]> {
 
 export async function createLabelRule(payload: LabelRulePayload): Promise<LabelRule> {
   const response = await api.post<LabelRule>("/transaction-label-rules", payload);
+  return response.data;
+}
+
+export async function getDashboardSpendingByLabel(month: string): Promise<DashboardSpendingByLabel> {
+  const response = await api.get<DashboardSpendingByLabel>("/dashboard/spending-by-label", { params: { month } });
   return response.data;
 }

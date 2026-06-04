@@ -64,12 +64,12 @@
 
 ## 8. Finance Dashboard
 
-- [ ] 8.1 Implement backend dashboard query for monthly debit totals grouped by label (#8)
-- [ ] 8.2 Exclude credit transactions from spending-by-label dashboard totals (#8)
-- [ ] 8.3 Implement frontend month selector for dashboard filtering (#8)
-- [ ] 8.4 Implement pie chart visualization grouped by label for the selected month (#8)
-- [ ] 8.5 Implement empty state when the selected month has no debit transactions (#8)
-- [ ] 8.6 Add dashboard tests for month filtering, debit-only totals, label grouping, and empty state behavior (#8)
+- [x] 8.1 Implement backend dashboard query for monthly debit totals grouped by label (#8)
+- [x] 8.2 Exclude credit transactions from spending-by-label dashboard totals (#8)
+- [x] 8.3 Implement frontend month selector for dashboard filtering (#8)
+- [x] 8.4 Implement pie chart visualization grouped by label for the selected month (#8)
+- [x] 8.5 Implement empty state when the selected month has no debit transactions (#8)
+- [x] 8.6 Add dashboard tests for month filtering, debit-only totals, label grouping, and empty state behavior (#8)
 
 ## 9. End-to-End Validation
 

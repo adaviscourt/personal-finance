@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Route, Routes } from "react-router-dom";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import {
   createLabelRule,
   createImportTemplate,
+  getDashboardSpendingByLabel,
   getHealth,
   listLabelRules,
   listLabels,
@@ -12,6 +14,7 @@ import {
   previewCsv,
   updateImportTemplate,
   type CsvPreviewResponse,
+  type DashboardSpendingLabel,
   type HealthResponse,
   type ImportTemplate,
   type ImportTemplateConfig,
@@ -28,6 +31,7 @@ const DEFAULT_TRANSFORMS: Record<(typeof REQUIRED_FIELDS)[number], TemplateTrans
   amount: "absolute_numeric",
   direction: "signed_amount_direction",
 };
+const CHART_COLORS = ["#426b35", "#7b5d2a", "#5868a8", "#b55c3d", "#2f7282", "#8a4c82"];
 
 type MappingDraft = Record<(typeof REQUIRED_FIELDS)[number], string>;
 type TransformDraft = Record<(typeof REQUIRED_FIELDS)[number], TemplateTransform>;
@@ -38,6 +42,10 @@ function createEmptyMappings(): MappingDraft {
 
 function createDefaultTransforms(): TransformDraft {
   return { ...DEFAULT_TRANSFORMS };
+}
+
+function currentMonth(): string {
+  return new Date().toISOString().slice(0, 7);
 }
 
 function Home() {
@@ -63,6 +71,9 @@ function Home() {
   const [labelRuleStatus, setLabelRuleStatus] = useState<string | null>(null);
   const [labelRuleError, setLabelRuleError] = useState<string | null>(null);
   const [labelRuleSaving, setLabelRuleSaving] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [dashboardLabels, setDashboardLabels] = useState<DashboardSpendingLabel[]>([]);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
   const previewRequestId = useRef(0);
 
   useEffect(() => {
@@ -100,6 +111,35 @@ function Home() {
       })
       .catch(() => setLabelRuleError("Could not load transaction labels."));
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    setDashboardError(null);
+
+    getDashboardSpendingByLabel(selectedMonth)
+      .then((dashboard) => {
+        if (active) {
+          setDashboardLabels(dashboard.labels);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setDashboardLabels([]);
+          setDashboardError("Could not load dashboard spending data.");
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedMonth]);
+
+  const dashboardChartData = dashboardLabels.map((label) => ({
+    name: label.label_name,
+    value: Number(label.amount),
+    amount: label.amount,
+  }));
+  const dashboardTotal = dashboardChartData.reduce((total, item) => total + item.value, 0);
 
   function applyTemplateToDraft(template: ImportTemplate) {
     const nextMappings = createEmptyMappings();
@@ -248,6 +288,47 @@ function Home() {
             {error ?? apiHealth?.status ?? "checking"}
           </span>
         </div>
+      </section>
+      <section className="dashboard-panel" aria-labelledby="dashboard-heading">
+        <div className="dashboard-header">
+          <div>
+            <p className="eyebrow">Finance Dashboard</p>
+            <h2 id="dashboard-heading">Monthly spending by label.</h2>
+          </div>
+          <label className="month-picker">
+            <span>Dashboard month</span>
+            <input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
+          </label>
+        </div>
+        {dashboardError ? <p className="preview-error">{dashboardError}</p> : null}
+        {dashboardLabels.length === 0 ? (
+          <div className="dashboard-empty">No spending data available for {selectedMonth}.</div>
+        ) : (
+          <div className="dashboard-grid">
+            <div className="chart-card" aria-label="Spending by label pie chart">
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie data={dashboardChartData} dataKey="value" nameKey="name" innerRadius={70} outerRadius={110} paddingAngle={3}>
+                    {dashboardChartData.map((item, index) => (
+                      <Cell key={item.name} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => `$${Number(value).toFixed(2)}`} />
+                </PieChart>
+              </ResponsiveContainer>
+              <strong>Total debit spending: ${dashboardTotal.toFixed(2)}</strong>
+            </div>
+            <div className="dashboard-legend" aria-label="Spending by label totals">
+              {dashboardLabels.map((label, index) => (
+                <div key={label.label_slug}>
+                  <span style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} />
+                  <strong>{label.label_name}</strong>
+                  <em>${Number(label.amount).toFixed(2)}</em>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
       <section className="upload-panel" aria-labelledby="upload-heading">
         <p className="eyebrow">CSV Upload Preview</p>
