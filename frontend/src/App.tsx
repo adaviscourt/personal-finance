@@ -4,6 +4,7 @@ import { Link, Route, Routes } from "react-router-dom";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import {
+  confirmImport,
   createLabelRule,
   createImportTemplate,
   getDashboardSpendingByLabel,
@@ -12,10 +13,13 @@ import {
   listLabels,
   listImportTemplates,
   previewCsv,
+  prepareImport,
   updateImportTemplate,
+  type ConfirmImportResponse,
   type CsvPreviewResponse,
   type DashboardSpendingLabel,
   type HealthResponse,
+  type ImportPrepareResponse,
   type ImportTemplate,
   type ImportTemplateConfig,
   type LabelRule,
@@ -63,6 +67,12 @@ function Home() {
   const [templateStatus, setTemplateStatus] = useState<string | null>(null);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateSaving, setTemplateSaving] = useState(false);
+  const [accountId, setAccountId] = useState("1");
+  const [preparedImport, setPreparedImport] = useState<ImportPrepareResponse | null>(null);
+  const [importResult, setImportResult] = useState<ConfirmImportResponse | null>(null);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
   const [labels, setLabels] = useState<TransactionLabel[]>([]);
   const [labelRules, setLabelRules] = useState<LabelRule[]>([]);
   const [labelRuleField, setLabelRuleField] = useState<"merchant" | "description">("description");
@@ -140,6 +150,16 @@ function Home() {
     amount: label.amount,
   }));
   const dashboardTotal = dashboardChartData.reduce((total, item) => total + item.value, 0);
+
+  function refreshDashboard() {
+    setDashboardError(null);
+    getDashboardSpendingByLabel(selectedMonth)
+      .then((dashboard) => setDashboardLabels(dashboard.labels))
+      .catch(() => {
+        setDashboardLabels([]);
+        setDashboardError("Could not load dashboard spending data.");
+      });
+  }
 
   function applyTemplateToDraft(template: ImportTemplate) {
     const nextMappings = createEmptyMappings();
@@ -346,6 +366,9 @@ function Home() {
                 setPreview(null);
                 setPreviewError(null);
                 setTemplateStatus(null);
+                setPreparedImport(null);
+                setImportResult(null);
+                setImportStatus(null);
               }}
             />
           </label>
@@ -456,6 +479,108 @@ function Home() {
                 {templateSaving ? "Saving..." : selectedTemplateId === "new" ? "Save Template" : "Update Template"}
               </button>
             </form>
+            <div className="import-confirmation" aria-label="Import confirmation">
+              <div>
+                <h3>Transformed Preview</h3>
+                <p>Use seeded default account id 1 for Docker startup, or enter an existing account id.</p>
+              </div>
+              <label>
+                <span>Account id</span>
+                <input value={accountId} onChange={(event) => setAccountId(event.target.value)} inputMode="numeric" />
+              </label>
+              <div className="import-actions">
+                <button
+                  type="button"
+                  disabled={importLoading || !selectedFile}
+                  onClick={async () => {
+                    setImportError(null);
+                    setImportStatus(null);
+                    setImportResult(null);
+                    const parsedAccountId = Number(accountId);
+                    if (!selectedFile || !Number.isInteger(parsedAccountId) || parsedAccountId <= 0) {
+                      setImportError("Choose a CSV file and valid account id before preparing import.");
+                      return;
+                    }
+                    const missingField = REQUIRED_FIELDS.find((field) => !mappingDraft[field]);
+                    if (missingField) {
+                      setImportError(`Map the required ${missingField} field before preparing import.`);
+                      return;
+                    }
+                    setImportLoading(true);
+                    try {
+                      const prepared = await prepareImport(selectedFile, parsedAccountId, buildTemplateConfig());
+                      setPreparedImport(prepared);
+                      setImportStatus(`Prepared ${prepared.row_count} row(s). Review transformed preview before confirming.`);
+                    } catch {
+                      setImportError("Could not prepare import. Check account id, mappings, and transform settings.");
+                    } finally {
+                      setImportLoading(false);
+                    }
+                  }}
+                >
+                  {importLoading ? "Preparing..." : "Prepare Import"}
+                </button>
+                <button
+                  type="button"
+                  disabled={importLoading || !preparedImport}
+                  onClick={async () => {
+                    if (!preparedImport) {
+                      return;
+                    }
+                    setImportError(null);
+                    setImportLoading(true);
+                    try {
+                      const confirmed = await confirmImport(preparedImport.upload_file_id, buildTemplateConfig());
+                      setImportResult(confirmed);
+                      setImportStatus(
+                        confirmed.inserted_count > 0
+                          ? `Imported ${confirmed.inserted_count} transaction(s).`
+                          : "Duplicate warning found; no transactions inserted.",
+                      );
+                      refreshDashboard();
+                    } catch {
+                      setImportError("Could not confirm import. Review duplicate warnings and mappings.");
+                    } finally {
+                      setImportLoading(false);
+                    }
+                  }}
+                >
+                  {importLoading ? "Confirming..." : "Confirm Import"}
+                </button>
+              </div>
+              {importError ? <p className="preview-error">{importError}</p> : null}
+              {importStatus ? <p className="template-status">{importStatus}</p> : null}
+              {preparedImport?.duplicate_candidates.length ? (
+                <p className="preview-error">{preparedImport.duplicate_candidates.length} duplicate candidate(s) found before import.</p>
+              ) : null}
+              {importResult?.duplicate_candidates.length ? (
+                <p className="preview-error">{importResult.duplicate_candidates.length} duplicate candidate(s) blocked insert.</p>
+              ) : null}
+              {preparedImport ? (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        {Object.keys(preparedImport.transformed_preview[0] ?? {}).map((header) => (
+                          <th key={header} scope="col">
+                            {header}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preparedImport.transformed_preview.map((row, index) => (
+                        <tr key={index}>
+                          {Object.keys(preparedImport.transformed_preview[0] ?? {}).map((header) => (
+                            <td key={header}>{row[header] ?? ""}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
             <div className="table-wrap">
               <table>
                 <thead>

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 import {
+  confirmImport,
   createLabelRule,
   createImportTemplate,
   getDashboardSpendingByLabel,
@@ -12,10 +13,12 @@ import {
   listLabels,
   listImportTemplates,
   previewCsv,
+  prepareImport,
   updateImportTemplate,
 } from "./api/client";
 
 vi.mock("./api/client", () => ({
+  confirmImport: vi.fn(),
   createLabelRule: vi.fn(),
   createImportTemplate: vi.fn(),
   getDashboardSpendingByLabel: vi.fn(),
@@ -24,9 +27,11 @@ vi.mock("./api/client", () => ({
   listLabels: vi.fn(),
   listImportTemplates: vi.fn(),
   previewCsv: vi.fn(),
+  prepareImport: vi.fn(),
   updateImportTemplate: vi.fn(),
 }));
 
+const mockedConfirmImport = vi.mocked(confirmImport);
 const mockedCreateLabelRule = vi.mocked(createLabelRule);
 const mockedCreateImportTemplate = vi.mocked(createImportTemplate);
 const mockedGetDashboardSpendingByLabel = vi.mocked(getDashboardSpendingByLabel);
@@ -35,6 +40,7 @@ const mockedListLabelRules = vi.mocked(listLabelRules);
 const mockedListLabels = vi.mocked(listLabels);
 const mockedListImportTemplates = vi.mocked(listImportTemplates);
 const mockedPreviewCsv = vi.mocked(previewCsv);
+const mockedPrepareImport = vi.mocked(prepareImport);
 const mockedUpdateImportTemplate = vi.mocked(updateImportTemplate);
 
 describe("App", () => {
@@ -53,7 +59,9 @@ describe("App", () => {
     mockedPreviewCsv.mockReset();
     mockedCreateLabelRule.mockReset();
     mockedCreateImportTemplate.mockReset();
+    mockedConfirmImport.mockReset();
     mockedUpdateImportTemplate.mockReset();
+    mockedPrepareImport.mockReset();
     mockedGetDashboardSpendingByLabel.mockReset();
     mockedGetDashboardSpendingByLabel.mockResolvedValue({ month: "2026-01", labels: [] });
   });
@@ -296,5 +304,47 @@ describe("App", () => {
 
     expect(await screen.findByText("Rule saved. Applied to 2 existing transactions.")).toBeInTheDocument();
     expect(mockedCreateLabelRule).toHaveBeenCalledWith({ label_id: 2, match_field: "merchant", pattern: "Bistro" });
+  });
+
+  it("prepares and confirms an import from mapped preview rows", async () => {
+    mockedPreviewCsv.mockResolvedValue({
+      headers: ["Date", "Description", "Amount"],
+      source_columns: ["Date", "Description", "Amount"],
+      rows: [{ Date: "2026-01-01", Description: "Coffee", Amount: "-4.50" }],
+    });
+    mockedPrepareImport.mockResolvedValue({
+      upload_file_id: 22,
+      row_count: 1,
+      transformed_preview: [{ date: "2026-01-01", description: "Coffee", amount: "4.50", direction: "debit" }],
+      duplicate_candidates: [],
+    });
+    mockedConfirmImport.mockResolvedValue({ upload_file_id: 22, inserted_count: 1, duplicate_candidates: [] });
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    );
+
+    const file = new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv", {
+      type: "text/csv",
+    });
+    fireEvent.change(screen.getByLabelText("Statement CSV"), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+
+    expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[3], { target: { value: "Amount" } });
+    fireEvent.click(screen.getByRole("button", { name: "Prepare Import" }));
+
+    expect(await screen.findByText("Prepared 1 row(s). Review transformed preview before confirming.")).toBeInTheDocument();
+    expect(screen.getByText("debit")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
+
+    expect(await screen.findByText("Imported 1 transaction(s).")).toBeInTheDocument();
+    expect(mockedPrepareImport).toHaveBeenCalledWith(file, 1, expect.any(Object));
+    expect(mockedConfirmImport).toHaveBeenCalledWith(22, expect.any(Object));
   });
 });

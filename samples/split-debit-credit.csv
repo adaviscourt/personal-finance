@@ -1,0 +1,4 @@
+Date,Description,Debit,Credit,Category,Balance,Check
+2026-02-01,Rent,1200.00,,Housing,2200.00,1001
+2026-02-02,Utility Bill,145.25,,Utilities,2054.75,
+2026-02-15,Refund,,32.10,Transfers,2086.85,

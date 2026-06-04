@@ -73,8 +73,8 @@
 
 ## 9. End-to-End Validation
 
-- [ ] 9.1 Add sample CSV fixtures for signed amount, split debit/credit columns, and source value lookup direction patterns (#9)
-- [ ] 9.2 Verify an upload can be previewed, mapped, transformed, confirmed, labeled, and charted through the UI (#9)
-- [ ] 9.3 Verify Docker startup instructions work from a clean checkout (#9)
-- [ ] 9.4 Run backend tests, frontend tests, and any lint/type checks available in the project (#9)
-- [ ] 9.5 Update README with setup, Docker usage, and MVP workflow instructions (#9)
+- [x] 9.1 Add sample CSV fixtures for signed amount, split debit/credit columns, and source value lookup direction patterns (#9)
+- [x] 9.2 Verify an upload can be previewed, mapped, transformed, confirmed, labeled, and charted through the UI (#9)
+- [x] 9.3 Verify Docker startup instructions work from a clean checkout (#9)
+- [x] 9.4 Run backend tests, frontend tests, and any lint/type checks available in the project (#9)
+- [x] 9.5 Update README with setup, Docker usage, and MVP workflow instructions (#9)

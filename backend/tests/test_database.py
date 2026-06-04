@@ -1,7 +1,7 @@
 from sqlalchemy import text
 from sqlmodel import Session, create_engine, select
 
-from app.database import LABEL_TAXONOMY, Label, init_db
+from app.database import DEFAULT_ACCOUNT_NAME, LABEL_TAXONOMY, Account, Label, init_db
 
 
 def make_test_engine(tmp_path):
@@ -43,6 +43,19 @@ def test_init_db_seeds_fixed_labels_idempotently(tmp_path) -> None:
     expected_labels = sorted(LABEL_TAXONOMY)
     assert [(label.slug, label.name) for label in labels] == expected_labels
     assert any(label.slug == "uncategorized" for label in labels)
+
+
+def test_init_db_seeds_default_account_idempotently(tmp_path) -> None:
+    engine = make_test_engine(tmp_path)
+
+    init_db(engine)
+    init_db(engine)
+
+    with Session(engine) as session:
+        accounts = session.exec(select(Account).where(Account.name == DEFAULT_ACCOUNT_NAME)).all()
+
+    assert len(accounts) == 1
+    assert accounts[0].account_type == "checking"
 
 
 def test_init_db_creates_lookup_and_matching_indexes(tmp_path) -> None:
