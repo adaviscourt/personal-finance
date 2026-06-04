@@ -1,0 +1,4 @@
+Posted Date,Merchant,Value,Flow,Source Category
+03/01/2026,Coffee Shop,5.25,PURCHASE,Dining
+03/02/2026,Employer Payroll,2500.00,DIRECT_DEPOSIT,Income
+03/03/2026,Card Refund,12.00,REFUND,Transfers

@@ -155,6 +155,7 @@ select {
 
 .upload-form button,
 .template-editor button,
+.import-confirmation button,
 .label-rule-form button {
   min-height: 44px;
   padding: 0 18px;
@@ -240,6 +241,7 @@ select {
 
 .upload-form button:disabled,
 .template-editor button:disabled,
+.import-confirmation button:disabled,
 .label-rule-form button:disabled {
   cursor: not-allowed;
   opacity: 0.65;
@@ -318,6 +320,34 @@ select {
 .template-status {
   color: #2f6d30;
   font-weight: 800;
+}
+
+.import-confirmation {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid #d8d0bd;
+  border-radius: 20px;
+  background: #fffdf7;
+}
+
+.import-confirmation p {
+  margin: 0;
+  color: #596473;
+}
+
+.import-confirmation label {
+  display: grid;
+  gap: 7px;
+  max-width: 220px;
+  color: #344055;
+  font-weight: 800;
+}
+
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .label-intro {
@@ -446,6 +476,7 @@ td {
   }
 
   .upload-form button,
+  .import-confirmation button,
   .label-rule-form button {
     width: 100%;
   }
