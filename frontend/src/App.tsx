@@ -77,6 +77,7 @@ function Home() {
   const [newAccountName, setNewAccountName] = useState("");
   const [renamingAccountId, setRenamingAccountId] = useState<number | null>(null);
   const [renamingAccountName, setRenamingAccountName] = useState("");
+  const [confirmingDeleteAccountId, setConfirmingDeleteAccountId] = useState<number | null>(null);
   const [accountStatus, setAccountStatus] = useState<string | null>(null);
   const [accountError, setAccountError] = useState<string | null>(null);
   const [preparedImport, setPreparedImport] = useState<ImportPrepareResponse | null>(null);
@@ -240,9 +241,11 @@ function Home() {
     try {
       const warning = await deleteAccount(account.id, confirmed);
       if (warning?.requires_confirmation) {
+        setConfirmingDeleteAccountId(account.id);
         setAccountError(`${account.name} has ${warning.transaction_count} transaction(s). Confirm deletion to remove account and linked import data.`);
         return;
       }
+      setConfirmingDeleteAccountId(null);
       setAccountStatus(`Deleted ${account.name}.`);
       await refreshAccounts();
     } catch {
@@ -440,7 +443,7 @@ function Home() {
                   </button>
                 )}
                 <button type="button" onClick={() => handleDeleteAccount(account)}>Delete</button>
-                {account.transaction_count > 0 ? (
+                {confirmingDeleteAccountId === account.id ? (
                   <button type="button" onClick={() => handleDeleteAccount(account, true)}>
                     Confirm Delete
                   </button>
