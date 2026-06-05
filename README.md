@@ -35,7 +35,7 @@ docker compose down -v
 ## Local Development
 
 - `make dev` starts the full Docker stack.
-- `make backend` uses `uv` to create `backend/.venv`, install backend dependencies, and starts FastAPI on port `8000`.
+- `make backend` uses `uv sync` from `backend/pyproject.toml` and `backend/uv.lock`, then starts FastAPI on port `8000`.
 - `make frontend` starts the Vite frontend on port `5173`.
 - `make test-backend` runs backend tests.
 - `make test-frontend` runs frontend tests.
