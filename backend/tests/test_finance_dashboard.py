@@ -118,3 +118,25 @@ def test_dashboard_returns_empty_state_data_for_month_without_debits() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"month": month, "labels": []}
+
+
+def test_dashboard_filters_by_selected_accounts_and_defaults_to_all() -> None:
+    month = "2098-05"
+    reset_month(month)
+    first_account = create_account(f"Dashboard first account {uuid4()}")
+    second_account = create_account(f"Dashboard second account {uuid4()}")
+    add_transaction(first_account.id or 0, "2098-05-01", "Market", "10.00", "debit", "groceries")
+    add_transaction(second_account.id or 0, "2098-05-02", "Pizza", "8.00", "debit", "dining")
+
+    all_response = TestClient(app).get(f"/dashboard/spending-by-label?month={month}")
+    filtered_response = TestClient(app).get(
+        f"/dashboard/spending-by-label?month={month}&account_ids={first_account.id}"
+    )
+
+    assert all_response.status_code == 200
+    assert {label["label_name"] for label in all_response.json()["labels"]} == {"Dining", "Groceries"}
+    assert filtered_response.status_code == 200
+    assert filtered_response.json() == {
+        "month": month,
+        "labels": [{"label_slug": "groceries", "label_name": "Groceries", "amount": "10.00"}],
+    }

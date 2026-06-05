@@ -53,6 +53,21 @@ export type ImportTemplatePayload = {
   config: ImportTemplateConfig;
 };
 
+export type Account = {
+  id: number;
+  name: string;
+  institution: string | null;
+  account_type: string | null;
+  created_at: string;
+  transaction_count: number;
+};
+
+export type AccountDeleteWarning = {
+  id: number;
+  transaction_count: number;
+  requires_confirmation: boolean;
+};
+
 export type UniqueValuesResponse = {
   source_column: string;
   values: string[];
@@ -179,8 +194,31 @@ export async function confirmImport(
   return response.data;
 }
 
-export async function listImportTemplates(): Promise<ImportTemplate[]> {
-  const response = await api.get<ImportTemplate[]>("/import-templates");
+export async function listAccounts(): Promise<Account[]> {
+  const response = await api.get<Account[]>("/accounts");
+  return response.data;
+}
+
+export async function createAccount(name: string): Promise<Account> {
+  const response = await api.post<Account>("/accounts", { name });
+  return response.data;
+}
+
+export async function renameAccount(accountId: number, name: string): Promise<Account> {
+  const response = await api.put<Account>(`/accounts/${accountId}`, { name });
+  return response.data;
+}
+
+export async function deleteAccount(accountId: number, confirmed = false): Promise<AccountDeleteWarning | null> {
+  const response = await api.delete<AccountDeleteWarning | undefined>(`/accounts/${accountId}`, {
+    params: { confirmed },
+    validateStatus: (status) => (status >= 200 && status < 300) || status === 409,
+  });
+  return response.data ?? null;
+}
+
+export async function listImportTemplates(accountId?: number): Promise<ImportTemplate[]> {
+  const response = await api.get<ImportTemplate[]>("/import-templates", { params: accountId ? { account_id: accountId } : undefined });
   return response.data;
 }
 
@@ -212,7 +250,10 @@ export async function createLabelRule(payload: LabelRulePayload): Promise<LabelR
   return response.data;
 }
 
-export async function getDashboardSpendingByLabel(month: string): Promise<DashboardSpendingByLabel> {
-  const response = await api.get<DashboardSpendingByLabel>("/dashboard/spending-by-label", { params: { month } });
+export async function getDashboardSpendingByLabel(month: string, accountIds: number[] = []): Promise<DashboardSpendingByLabel> {
+  const response = await api.get<DashboardSpendingByLabel>("/dashboard/spending-by-label", {
+    params: { month, account_ids: accountIds },
+    paramsSerializer: { indexes: null },
+  });
   return response.data;
 }

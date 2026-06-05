@@ -6,7 +6,7 @@ Docker-runnable personal finance MVP with a Vite + React frontend, FastAPI backe
 
 - Install Docker Desktop for the simplest full-stack run.
 - Install `uv` for backend dependency/env management and Node.js if running backend or frontend outside Docker.
-- Use the seeded `Default Account` with account id `1` for first imports in a clean Docker volume.
+- Use the seeded `Default Account` from the account selector for first imports in a clean Docker volume.
 
 ## Docker Usage
 
@@ -48,7 +48,7 @@ docker compose down -v
 4. Preview raw source rows and source columns.
 5. Map required fields: `date`, `description`, `amount`, and `direction`.
 6. Save or update an import template for reuse.
-7. Prepare the import using account id `1` to review transformed rows and duplicate warnings.
+7. Select the seeded `Default Account`, then prepare the import to review transformed rows and duplicate warnings.
 8. Confirm the import to create normalized transactions.
 9. Add a label rule for merchant or description text, then review applied label count.
 10. Select the imported transaction month in the dashboard to chart debit spending by label.

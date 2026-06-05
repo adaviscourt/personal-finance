@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from sqlmodel import Session, delete, select
+from sqlmodel import Session, col, delete, select
 
 from app.database import Account, ImportTemplate, engine, init_db
 from app.main import app
@@ -28,8 +28,9 @@ def valid_template_payload(name: str = "Checking CSV") -> dict:
 def cleanup_template_names(*names: str) -> None:
     init_db()
     with Session(engine) as session:
+        session.execute(delete(ImportTemplate))
         for name in names:
-            session.exec(delete(ImportTemplate).where(ImportTemplate.name == name))
+            session.execute(delete(ImportTemplate).where(col(ImportTemplate.name) == name))
         session.commit()
 
 
