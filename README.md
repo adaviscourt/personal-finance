@@ -5,7 +5,7 @@ Docker-runnable personal finance MVP with a Vite + React frontend, FastAPI backe
 ## Setup
 
 - Install Docker Desktop for the simplest full-stack run.
-- Install Python 3 and Node.js if running backend or frontend outside Docker.
+- Install `uv` for backend dependency/env management and Node.js if running backend or frontend outside Docker.
 - Use the seeded `Default Account` with account id `1` for first imports in a clean Docker volume.
 
 ## Docker Usage
@@ -35,7 +35,7 @@ docker compose down -v
 ## Local Development
 
 - `make dev` starts the full Docker stack.
-- `make backend` creates `backend/.venv`, installs backend dependencies, and starts FastAPI on port `8000`.
+- `make backend` uses `uv` to create `backend/.venv`, install backend dependencies, and starts FastAPI on port `8000`.
 - `make frontend` starts the Vite frontend on port `5173`.
 - `make test-backend` runs backend tests.
 - `make test-frontend` runs frontend tests.
