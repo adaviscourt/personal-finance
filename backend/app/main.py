@@ -9,6 +9,7 @@ from typing import Any, Literal
 import polars as pl
 from fastapi import FastAPI, Form, HTTPException, Query, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import func, or_
 from sqlmodel import Session, col, select
@@ -141,6 +142,32 @@ class ImportTemplateResponse(BaseModel):
     updated_at: str
 
 
+class AccountPayload(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+    @field_validator("name")
+    @classmethod
+    def non_blank_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Account name must not be blank.")
+        return value.strip()
+
+
+class AccountResponse(BaseModel):
+    id: int
+    name: str
+    institution: str | None
+    account_type: str | None
+    created_at: str
+    transaction_count: int
+
+
+class AccountDeleteWarning(BaseModel):
+    id: int
+    transaction_count: int
+    requires_confirmation: bool
+
+
 class LabelResponse(BaseModel):
     id: int
     slug: str
@@ -193,6 +220,29 @@ def serialize_template(template: ImportTemplate) -> ImportTemplateResponse:
         created_at=template.created_at.isoformat(),
         updated_at=template.updated_at.isoformat(),
     )
+
+
+def account_transaction_count(session: Session, account_id: int) -> int:
+    return session.exec(select(func.count()).select_from(Transaction).where(Transaction.account_id == account_id)).one()
+
+
+def serialize_account(account: Account, transaction_count: int) -> AccountResponse:
+    if account.id is None:
+        raise HTTPException(status_code=500, detail="Saved account is missing an id.")
+    return AccountResponse(
+        id=account.id,
+        name=account.name,
+        institution=account.institution,
+        account_type=account.account_type,
+        created_at=account.created_at.isoformat(),
+        transaction_count=transaction_count,
+    )
+
+
+def require_unique_account_name(session: Session, name: str, account_id: int | None = None) -> None:
+    existing = session.exec(select(Account).where(Account.name == name)).first()
+    if existing is not None and existing.id != account_id:
+        raise HTTPException(status_code=409, detail="Account name already exists.")
 
 
 def serialize_label(label: Label) -> LabelResponse:
@@ -552,6 +602,76 @@ def health() -> dict[str, str]:
     return {"status": "ok", "database": "ok"}
 
 
+@app.get("/accounts")
+def list_accounts() -> list[AccountResponse]:
+    with Session(engine) as session:
+        rows = session.exec(
+            select(Account, func.count(col(Transaction.id)))
+            .join(Transaction, col(Account.id) == Transaction.account_id, isouter=True)
+            .group_by(col(Account.id))
+            .order_by(Account.name)
+        ).all()
+    return [serialize_account(account, transaction_count) for account, transaction_count in rows]
+
+
+@app.post("/accounts", status_code=201)
+def create_account(payload: AccountPayload) -> AccountResponse:
+    with Session(engine) as session:
+        require_unique_account_name(session, payload.name)
+        account = Account(name=payload.name)
+        session.add(account)
+        session.commit()
+        session.refresh(account)
+        return serialize_account(account, 0)
+
+
+@app.put("/accounts/{account_id}")
+def rename_account(account_id: int, payload: AccountPayload) -> AccountResponse:
+    with Session(engine) as session:
+        account = session.get(Account, account_id)
+        if account is None:
+            raise HTTPException(status_code=404, detail="Account not found.")
+        require_unique_account_name(session, payload.name, account_id)
+        account.name = payload.name
+        session.add(account)
+        session.commit()
+        session.refresh(account)
+        return serialize_account(account, account_transaction_count(session, account_id))
+
+
+@app.delete("/accounts/{account_id}", response_model=None)
+def delete_account(account_id: int, confirmed: bool = False) -> AccountDeleteWarning | Response:
+    with Session(engine) as session:
+        account = session.get(Account, account_id)
+        if account is None:
+            raise HTTPException(status_code=404, detail="Account not found.")
+        transaction_count = account_transaction_count(session, account_id)
+        if transaction_count > 0 and not confirmed:
+            return JSONResponse(
+                status_code=409,
+                content={"id": account_id, "transaction_count": transaction_count, "requires_confirmation": True},
+            )
+
+        upload_ids = [
+            upload_id
+            for upload_id in session.exec(select(StoredUploadFile.id).where(StoredUploadFile.account_id == account_id)).all()
+            if upload_id is not None
+        ]
+        for transaction in session.exec(select(Transaction).where(Transaction.account_id == account_id)).all():
+            session.delete(transaction)
+        for template in session.exec(select(ImportTemplate).where(ImportTemplate.account_id == account_id)).all():
+            session.delete(template)
+        for upload_id in upload_ids:
+            for raw_row in session.exec(select(RawImportRow).where(RawImportRow.upload_file_id == upload_id)).all():
+                session.delete(raw_row)
+        for upload in session.exec(select(StoredUploadFile).where(StoredUploadFile.account_id == account_id)).all():
+            session.delete(upload)
+        session.commit()
+        session.delete(account)
+        session.commit()
+    return Response(status_code=204)
+
+
 @app.post("/imports/preview")
 async def preview_import(file: UploadFile) -> CsvPreviewResponse:
     frame = await read_csv_frame(file)
@@ -673,18 +793,22 @@ def list_labels() -> list[LabelResponse]:
 @app.get("/dashboard/spending-by-label")
 def get_dashboard_spending_by_label(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    account_ids: list[int] = Query(default=[]),
 ) -> DashboardSpendingByLabelResponse:
     with Session(engine) as session:
         uncategorized = get_uncategorized_label(session)
         label_slug = func.coalesce(Label.slug, uncategorized.slug)
         label_name = func.coalesce(Label.name, uncategorized.name)
-        rows = session.exec(
+        statement = (
             select(label_slug, label_name, func.sum(Transaction.amount))
             .join(Label, col(Transaction.label_id) == Label.id, isouter=True)
             .where(Transaction.transaction_month == month, Transaction.direction == "debit")
             .group_by(label_slug, label_name)
             .order_by(label_name)
-        ).all()
+        )
+        if account_ids:
+            statement = statement.where(col(Transaction.account_id).in_(account_ids))
+        rows = session.exec(statement).all()
 
     labels = [
         DashboardSpendingByLabelItem(

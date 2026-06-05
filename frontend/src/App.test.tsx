@@ -5,42 +5,54 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
   confirmImport,
+  createAccount,
   createLabelRule,
   createImportTemplate,
+  deleteAccount,
   getDashboardSpendingByLabel,
   getHealth,
+  listAccounts,
   listLabelRules,
   listLabels,
   listImportTemplates,
   previewCsv,
   prepareImport,
+  renameAccount,
   updateImportTemplate,
 } from "./api/client";
 
 vi.mock("./api/client", () => ({
   confirmImport: vi.fn(),
+  createAccount: vi.fn(),
   createLabelRule: vi.fn(),
   createImportTemplate: vi.fn(),
+  deleteAccount: vi.fn(),
   getDashboardSpendingByLabel: vi.fn(),
   getHealth: vi.fn(),
+  listAccounts: vi.fn(),
   listLabelRules: vi.fn(),
   listLabels: vi.fn(),
   listImportTemplates: vi.fn(),
   previewCsv: vi.fn(),
   prepareImport: vi.fn(),
+  renameAccount: vi.fn(),
   updateImportTemplate: vi.fn(),
 }));
 
 const mockedConfirmImport = vi.mocked(confirmImport);
+const mockedCreateAccount = vi.mocked(createAccount);
 const mockedCreateLabelRule = vi.mocked(createLabelRule);
 const mockedCreateImportTemplate = vi.mocked(createImportTemplate);
+const mockedDeleteAccount = vi.mocked(deleteAccount);
 const mockedGetDashboardSpendingByLabel = vi.mocked(getDashboardSpendingByLabel);
 const mockedGetHealth = vi.mocked(getHealth);
+const mockedListAccounts = vi.mocked(listAccounts);
 const mockedListLabelRules = vi.mocked(listLabelRules);
 const mockedListLabels = vi.mocked(listLabels);
 const mockedListImportTemplates = vi.mocked(listImportTemplates);
 const mockedPreviewCsv = vi.mocked(previewCsv);
 const mockedPrepareImport = vi.mocked(prepareImport);
+const mockedRenameAccount = vi.mocked(renameAccount);
 const mockedUpdateImportTemplate = vi.mocked(updateImportTemplate);
 
 describe("App", () => {
@@ -55,13 +67,34 @@ describe("App", () => {
       { id: 2, slug: "dining", name: "Dining" },
     ]);
     mockedListLabelRules.mockResolvedValue([]);
+    mockedListAccounts.mockResolvedValue([
+      {
+        id: 1,
+        name: "Default Account",
+        institution: "Manual import",
+        account_type: "checking",
+        created_at: "2026-01-01T00:00:00+00:00",
+        transaction_count: 0,
+      },
+      {
+        id: 42,
+        name: "Travel Card",
+        institution: null,
+        account_type: null,
+        created_at: "2026-01-01T00:00:00+00:00",
+        transaction_count: 2,
+      },
+    ]);
     mockedListImportTemplates.mockResolvedValue([]);
     mockedPreviewCsv.mockReset();
     mockedCreateLabelRule.mockReset();
+    mockedCreateAccount.mockReset();
+    mockedDeleteAccount.mockReset();
     mockedCreateImportTemplate.mockReset();
     mockedConfirmImport.mockReset();
     mockedUpdateImportTemplate.mockReset();
     mockedPrepareImport.mockReset();
+    mockedRenameAccount.mockReset();
     mockedGetDashboardSpendingByLabel.mockReset();
     mockedGetDashboardSpendingByLabel.mockResolvedValue({ month: "2026-01", labels: [] });
   });
@@ -122,11 +155,12 @@ describe("App", () => {
     expect(await screen.findByText("Groceries")).toBeInTheDocument();
     expect(screen.getByText("$25.25")).toBeInTheDocument();
     expect(screen.getByText("Total debit spending: $33.25")).toBeInTheDocument();
-    expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/));
+    expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), []);
   });
 
   it("updates dashboard data when month changes and shows empty spending state", async () => {
     mockedGetDashboardSpendingByLabel
+      .mockResolvedValueOnce({ month: "2026-01", labels: [{ label_slug: "dining", label_name: "Dining", amount: "8.00" }] })
       .mockResolvedValueOnce({ month: "2026-01", labels: [{ label_slug: "dining", label_name: "Dining", amount: "8.00" }] })
       .mockResolvedValueOnce({ month: "2026-02", labels: [] });
 
@@ -139,8 +173,54 @@ describe("App", () => {
     expect(await screen.findByText("Total debit spending: $8.00")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Dashboard month"), { target: { value: "2026-02" } });
 
-    expect(await screen.findByText("No spending data available for 2026-02.")).toBeInTheDocument();
-    expect(mockedGetDashboardSpendingByLabel).toHaveBeenLastCalledWith("2026-02");
+    expect(await screen.findByText("No spending data available for 2026-02 and selected accounts.")).toBeInTheDocument();
+    expect(mockedGetDashboardSpendingByLabel).toHaveBeenLastCalledWith("2026-02", []);
+  });
+
+  it("filters dashboard spending by selected accounts", async () => {
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect((await screen.findAllByText("Travel Card")).length).toBeGreaterThan(0);
+    const accountFilter = screen.getByRole("listbox") as HTMLSelectElement;
+    accountFilter.options[1].selected = true;
+    fireEvent.change(accountFilter);
+
+    expect(mockedGetDashboardSpendingByLabel).toHaveBeenLastCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), [42]);
+  });
+
+  it("creates and deletes accounts with transaction confirmation", async () => {
+    mockedCreateAccount.mockResolvedValue({
+      id: 99,
+      name: "Savings",
+      institution: null,
+      account_type: null,
+      created_at: "2026-01-01T00:00:00+00:00",
+      transaction_count: 0,
+    });
+    mockedDeleteAccount.mockResolvedValueOnce({ id: 42, transaction_count: 2, requires_confirmation: true }).mockResolvedValueOnce(null);
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Manage import accounts.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("New account name"), { target: { value: "Savings" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
+
+    expect(await screen.findByText("Created Savings.")).toBeInTheDocument();
+    expect(mockedCreateAccount).toHaveBeenCalledWith("Savings");
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[1]);
+
+    expect(await screen.findByText("Travel Card has 2 transaction(s). Confirm deletion to remove account and linked import data.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Delete" }));
+
+    expect(mockedDeleteAccount).toHaveBeenLastCalledWith(42, true);
   });
 
   it("saves a new import template from source column mappings", async () => {
@@ -193,7 +273,7 @@ describe("App", () => {
     expect(await screen.findByText("Template saved for future imports.")).toBeInTheDocument();
     expect(mockedCreateImportTemplate).toHaveBeenCalledWith({
       name: "Checking export",
-      account_id: null,
+      account_id: 1,
       config: {
         mappings: expect.objectContaining({
           date: { source_column: "Date", transform: "parse_date" },
@@ -304,7 +384,7 @@ describe("App", () => {
 
     expect(await screen.findByText("Rule saved. Applied to 2 existing transactions.")).toBeInTheDocument();
     expect(mockedCreateLabelRule).toHaveBeenCalledWith({ label_id: 2, match_field: "merchant", pattern: "Bistro" });
-    expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledTimes(2);
+    expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledTimes(3);
   });
 
   it("prepares and confirms an import from mapped preview rows", async () => {
@@ -334,6 +414,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Active account"), { target: { value: "42" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
@@ -345,7 +426,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
 
     expect(await screen.findByText("Imported 1 transaction(s).")).toBeInTheDocument();
-    expect(mockedPrepareImport).toHaveBeenCalledWith(file, 1, expect.any(Object));
+    expect(mockedPrepareImport).toHaveBeenCalledWith(file, 42, expect.any(Object));
     expect(mockedConfirmImport).toHaveBeenCalledWith(22, expect.any(Object));
   });
 });

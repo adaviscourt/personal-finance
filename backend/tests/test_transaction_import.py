@@ -89,6 +89,24 @@ def test_prepare_persists_upload_and_raw_rows_without_transactions() -> None:
     assert transactions == []
 
 
+def test_prepare_rejects_missing_account_before_storing_rows() -> None:
+    init_db()
+    client = TestClient(app)
+    with Session(engine) as session:
+        upload_count = len(session.exec(select(UploadFile)).all())
+
+    response = prepare_import(
+        client,
+        999_999,
+        "Date,Description,Amount,Type,Category,Balance,Check\n2026-01-01,Coffee,-4.50,Sale,Dining,100.00,\n",
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Account not found."}
+    with Session(engine) as session:
+        assert len(session.exec(select(UploadFile)).all()) == upload_count
+
+
 def test_confirm_import_inserts_unified_transactions_with_source_links() -> None:
     client = TestClient(app)
     account = create_account(f"Issue 6 Confirm Account {uuid4()}")

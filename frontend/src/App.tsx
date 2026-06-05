@@ -5,16 +5,21 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import {
   confirmImport,
+  createAccount,
   createLabelRule,
   createImportTemplate,
+  deleteAccount,
   getDashboardSpendingByLabel,
   getHealth,
+  listAccounts,
   listLabelRules,
   listLabels,
   listImportTemplates,
   previewCsv,
   prepareImport,
+  renameAccount,
   updateImportTemplate,
+  type Account,
   type ConfirmImportResponse,
   type CsvPreviewResponse,
   type DashboardSpendingLabel,
@@ -67,7 +72,13 @@ function Home() {
   const [templateStatus, setTemplateStatus] = useState<string | null>(null);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateSaving, setTemplateSaving] = useState(false);
-  const [accountId, setAccountId] = useState("1");
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [activeAccountId, setActiveAccountId] = useState<number | "">("");
+  const [newAccountName, setNewAccountName] = useState("");
+  const [renamingAccountId, setRenamingAccountId] = useState<number | null>(null);
+  const [renamingAccountName, setRenamingAccountName] = useState("");
+  const [accountStatus, setAccountStatus] = useState<string | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
   const [preparedImport, setPreparedImport] = useState<ImportPrepareResponse | null>(null);
   const [importResult, setImportResult] = useState<ConfirmImportResponse | null>(null);
   const [importStatus, setImportStatus] = useState<string | null>(null);
@@ -82,6 +93,7 @@ function Home() {
   const [labelRuleError, setLabelRuleError] = useState<string | null>(null);
   const [labelRuleSaving, setLabelRuleSaving] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [dashboardAccountIds, setDashboardAccountIds] = useState<number[]>([]);
   const [dashboardLabels, setDashboardLabels] = useState<DashboardSpendingLabel[]>([]);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const previewRequestId = useRef(0);
@@ -107,10 +119,18 @@ function Home() {
   }, []);
 
   useEffect(() => {
-    listImportTemplates()
+    refreshAccounts();
+  }, []);
+
+  useEffect(() => {
+    if (activeAccountId === "") {
+      setTemplates([]);
+      return;
+    }
+    listImportTemplates(activeAccountId)
       .then(setTemplates)
       .catch(() => setTemplateError("Could not load import templates."));
-  }, []);
+  }, [activeAccountId]);
 
   useEffect(() => {
     Promise.all([listLabels(), listLabelRules()])
@@ -126,7 +146,7 @@ function Home() {
     let active = true;
     setDashboardError(null);
 
-    getDashboardSpendingByLabel(selectedMonth)
+    getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds)
       .then((dashboard) => {
         if (active) {
           setDashboardLabels(dashboard.labels);
@@ -142,7 +162,7 @@ function Home() {
     return () => {
       active = false;
     };
-  }, [selectedMonth]);
+  }, [selectedMonth, dashboardAccountIds]);
 
   const dashboardChartData = dashboardLabels.map((label) => ({
     name: label.label_name,
@@ -150,15 +170,84 @@ function Home() {
     amount: label.amount,
   }));
   const dashboardTotal = dashboardChartData.reduce((total, item) => total + item.value, 0);
+  const activeAccount = activeAccountId === "" ? null : accounts.find((account) => account.id === activeAccountId) ?? null;
 
   function refreshDashboard() {
     setDashboardError(null);
-    getDashboardSpendingByLabel(selectedMonth)
+    getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds)
       .then((dashboard) => setDashboardLabels(dashboard.labels))
       .catch(() => {
         setDashboardLabels([]);
         setDashboardError("Could not load dashboard spending data.");
       });
+  }
+
+  function refreshAccounts() {
+    return listAccounts()
+      .then((nextAccounts) => {
+        setAccounts(nextAccounts);
+        setActiveAccountId((currentId) => {
+          if (currentId !== "" && nextAccounts.some((account) => account.id === currentId)) {
+            return currentId;
+          }
+          return nextAccounts[0]?.id ?? "";
+        });
+        setDashboardAccountIds((currentIds) => currentIds.filter((id) => nextAccounts.some((account) => account.id === id)));
+      })
+      .catch(() => setAccountError("Could not load accounts."));
+  }
+
+  async function handleCreateAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAccountError(null);
+    setAccountStatus(null);
+    if (!newAccountName.trim()) {
+      setAccountError("Enter an account name.");
+      return;
+    }
+    try {
+      const account = await createAccount(newAccountName);
+      setNewAccountName("");
+      setAccountStatus(`Created ${account.name}.`);
+      await refreshAccounts();
+      setActiveAccountId(account.id);
+    } catch {
+      setAccountError("Could not create account. Use a unique name.");
+    }
+  }
+
+  async function handleRenameAccount(accountId: number) {
+    setAccountError(null);
+    setAccountStatus(null);
+    if (!renamingAccountName.trim()) {
+      setAccountError("Enter an account name.");
+      return;
+    }
+    try {
+      const account = await renameAccount(accountId, renamingAccountName);
+      setRenamingAccountId(null);
+      setRenamingAccountName("");
+      setAccountStatus(`Renamed account to ${account.name}.`);
+      await refreshAccounts();
+    } catch {
+      setAccountError("Could not rename account. Use a unique name.");
+    }
+  }
+
+  async function handleDeleteAccount(account: Account, confirmed = false) {
+    setAccountError(null);
+    setAccountStatus(null);
+    try {
+      const warning = await deleteAccount(account.id, confirmed);
+      if (warning?.requires_confirmation) {
+        setAccountError(`${account.name} has ${warning.transaction_count} transaction(s). Confirm deletion to remove account and linked import data.`);
+        return;
+      }
+      setAccountStatus(`Deleted ${account.name}.`);
+      await refreshAccounts();
+    } catch {
+      setAccountError("Could not delete account.");
+    }
   }
 
   function applyTemplateToDraft(template: ImportTemplate) {
@@ -214,7 +303,7 @@ function Home() {
         selectedTemplateId === "new"
           ? null
           : templates.find((template) => template.id === selectedTemplateId) ?? null;
-      const payload = { name: templateName, account_id: selectedTemplate?.account_id ?? null, config: buildTemplateConfig() };
+      const payload = { name: templateName, account_id: selectedTemplate?.account_id ?? (activeAccountId || null), config: buildTemplateConfig() };
       const savedTemplate =
         selectedTemplateId === "new"
           ? await createImportTemplate(payload)
@@ -310,6 +399,57 @@ function Home() {
           </span>
         </div>
       </section>
+      <section className="account-panel" aria-labelledby="accounts-heading">
+        <p className="eyebrow">Accounts</p>
+        <h2 id="accounts-heading">Manage import accounts.</h2>
+        <form className="account-create-form" onSubmit={handleCreateAccount}>
+          <label>
+            <span>New account name</span>
+            <input value={newAccountName} onChange={(event) => setNewAccountName(event.target.value)} placeholder="Everyday checking" />
+          </label>
+          <button type="submit">Create Account</button>
+        </form>
+        {accountError ? <p className="preview-error">{accountError}</p> : null}
+        {accountStatus ? <p className="template-status">{accountStatus}</p> : null}
+        <div className="account-list" aria-label="Accounts">
+          {accounts.length === 0 ? <p>No accounts yet. Create one before importing transactions.</p> : null}
+          {accounts.map((account) => (
+            <article key={account.id}>
+              <div>
+                <strong>{account.name}</strong>
+                <span>{account.transaction_count} transaction(s)</span>
+              </div>
+              {renamingAccountId === account.id ? (
+                <label>
+                  <span>Rename account</span>
+                  <input value={renamingAccountName} onChange={(event) => setRenamingAccountName(event.target.value)} />
+                </label>
+              ) : null}
+              <div className="account-actions">
+                {renamingAccountId === account.id ? (
+                  <button type="button" onClick={() => handleRenameAccount(account.id)}>Save Rename</button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRenamingAccountId(account.id);
+                      setRenamingAccountName(account.name);
+                    }}
+                  >
+                    Rename
+                  </button>
+                )}
+                <button type="button" onClick={() => handleDeleteAccount(account)}>Delete</button>
+                {account.transaction_count > 0 ? (
+                  <button type="button" onClick={() => handleDeleteAccount(account, true)}>
+                    Confirm Delete
+                  </button>
+                ) : null}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
       <section className="dashboard-panel" aria-labelledby="dashboard-heading">
         <div className="dashboard-header">
           <div>
@@ -320,10 +460,29 @@ function Home() {
             <span>Dashboard month</span>
             <input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
           </label>
+          <label className="account-filter">
+            <span>Dashboard accounts</span>
+            <select
+              aria-label="Dashboard accounts"
+              multiple
+              value={dashboardAccountIds.map(String)}
+              onChange={(event) => {
+                const values = Array.from(event.target.selectedOptions, (option) => Number(option.value));
+                setDashboardAccountIds(values);
+              }}
+            >
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                </option>
+              ))}
+            </select>
+            <small>Leave blank for all accounts.</small>
+          </label>
         </div>
         {dashboardError ? <p className="preview-error">{dashboardError}</p> : null}
         {dashboardLabels.length === 0 ? (
-          <div className="dashboard-empty">No spending data available for {selectedMonth}.</div>
+          <div className="dashboard-empty">No spending data available for {selectedMonth} and selected accounts.</div>
         ) : (
           <div className="dashboard-grid">
             <div className="chart-card" aria-label="Spending by label pie chart">
@@ -483,12 +642,27 @@ function Home() {
             <div className="import-confirmation" aria-label="Import confirmation">
               <div>
                 <h3>Transformed Preview</h3>
-                <p>Use seeded default account id 1 for Docker startup, or enter an existing account id.</p>
+                <p>Select an existing account before preparing an import.</p>
               </div>
               <label>
-                <span>Account id</span>
-                <input value={accountId} onChange={(event) => setAccountId(event.target.value)} inputMode="numeric" />
+                <span>Active account</span>
+                <select
+                  value={activeAccountId}
+                  onChange={(event) => {
+                    setActiveAccountId(event.target.value ? Number(event.target.value) : "");
+                    setPreparedImport(null);
+                    setImportResult(null);
+                  }}
+                >
+                  <option value="">Choose account</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
               </label>
+              {activeAccount ? <p>Templates are scoped to {activeAccount.name}; global templates also appear.</p> : null}
               <div className="import-actions">
                 <button
                   type="button"
@@ -497,9 +671,8 @@ function Home() {
                     setImportError(null);
                     setImportStatus(null);
                     setImportResult(null);
-                    const parsedAccountId = Number(accountId);
-                    if (!selectedFile || !Number.isInteger(parsedAccountId) || parsedAccountId <= 0) {
-                      setImportError("Choose a CSV file and valid account id before preparing import.");
+                    if (!selectedFile || activeAccountId === "") {
+                      setImportError("Choose a CSV file and active account before preparing import.");
                       return;
                     }
                     const missingField = REQUIRED_FIELDS.find((field) => !mappingDraft[field]);
@@ -509,7 +682,7 @@ function Home() {
                     }
                     setImportLoading(true);
                     try {
-                      const prepared = await prepareImport(selectedFile, parsedAccountId, buildTemplateConfig());
+                      const prepared = await prepareImport(selectedFile, activeAccountId, buildTemplateConfig());
                       setPreparedImport(prepared);
                       setImportStatus(`Prepared ${prepared.row_count} row(s). Review transformed preview before confirming.`);
                     } catch {
