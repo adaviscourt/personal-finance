@@ -209,6 +209,36 @@ class DashboardSpendingByLabelResponse(BaseModel):
     labels: list[DashboardSpendingByLabelItem]
 
 
+class DashboardTransactionAccount(BaseModel):
+    id: int
+    name: str
+
+
+class DashboardTransactionLabel(BaseModel):
+    id: int | None
+    slug: str
+    name: str
+
+
+class DashboardTransactionRow(BaseModel):
+    id: int
+    transaction_date: str
+    account: DashboardTransactionAccount
+    description: str
+    merchant: str | None
+    label: DashboardTransactionLabel
+    direction: str
+    amount: str
+    source_type: str | None
+    source_category: str | None
+    check_number: str | None
+
+
+class DashboardTransactionListResponse(BaseModel):
+    month: str
+    transactions: list[DashboardTransactionRow]
+
+
 def serialize_template(template: ImportTemplate) -> ImportTemplateResponse:
     if template.id is None:
         raise HTTPException(status_code=500, detail="Saved template is missing an id.")
@@ -269,6 +299,34 @@ def serialize_label_rule(rule: TransactionLabelRule, label: Label, applied_count
 def serialize_dashboard_amount(value: Any) -> str:
     amount = value if isinstance(value, Decimal) else Decimal(str(value))
     return serialize_decimal(normalize_decimal(amount)) or "0.00"
+
+
+def serialize_dashboard_transaction(
+    transaction: Transaction,
+    account: Account,
+    label: Label | None,
+    uncategorized: Label,
+) -> DashboardTransactionRow:
+    if transaction.id is None or account.id is None:
+        raise HTTPException(status_code=500, detail="Dashboard transaction row is missing required ids.")
+    display_label = label or uncategorized
+    return DashboardTransactionRow(
+        id=transaction.id,
+        transaction_date=transaction.transaction_date.isoformat(),
+        account=DashboardTransactionAccount(id=account.id, name=account.name),
+        description=transaction.description,
+        merchant=transaction.merchant,
+        label=DashboardTransactionLabel(
+            id=label.id if label is not None else None,
+            slug=display_label.slug,
+            name=display_label.name,
+        ),
+        direction=transaction.direction,
+        amount=serialize_dashboard_amount(transaction.amount),
+        source_type=transaction.source_type,
+        source_category=transaction.source_category,
+        check_number=transaction.check_number,
+    )
 
 
 def validate_template_account(session: Session, account_id: int | None) -> None:
@@ -820,6 +878,45 @@ def get_dashboard_spending_by_label(
         if total is not None
     ]
     return DashboardSpendingByLabelResponse(month=month, labels=labels)
+
+
+@app.get("/dashboard/transactions")
+def get_dashboard_transactions(
+    month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    account_ids: list[int] = Query(default=[]),
+    label_ids: list[int] = Query(default=[]),
+    label_slugs: list[str] = Query(default=[]),
+) -> DashboardTransactionListResponse:
+    with Session(engine) as session:
+        uncategorized = get_uncategorized_label(session)
+        statement = (
+            select(Transaction, Account, Label)
+            .join(Account, col(Transaction.account_id) == Account.id)
+            .join(Label, col(Transaction.label_id) == Label.id, isouter=True)
+            .where(Transaction.transaction_month == month)
+            .order_by(col(Transaction.transaction_date), col(Transaction.id))
+        )
+        if account_ids:
+            statement = statement.where(col(Transaction.account_id).in_(account_ids))
+        if label_ids:
+            label_filter_clauses = [col(Transaction.label_id).in_(label_ids)]
+            if uncategorized.id in label_ids:
+                label_filter_clauses.append(col(Transaction.label_id).is_(None))
+            statement = statement.where(or_(*label_filter_clauses))
+        if label_slugs:
+            label_slug_filter_clauses = [col(Label.slug).in_(label_slugs)]
+            if uncategorized.slug in label_slugs:
+                label_slug_filter_clauses.append(col(Transaction.label_id).is_(None))
+            statement = statement.where(or_(*label_slug_filter_clauses))
+        rows = session.exec(statement).all()
+
+    return DashboardTransactionListResponse(
+        month=month,
+        transactions=[
+            serialize_dashboard_transaction(transaction, account, label, uncategorized)
+            for transaction, account, label in rows
+        ],
+    )
 
 
 @app.get("/transaction-label-rules")

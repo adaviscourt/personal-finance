@@ -1,9 +1,9 @@
 ## 1. Backend Dashboard Data
 
-- [ ] 1.1 Add response models for dashboard transaction rows with transaction, account, and label display fields. (#32)
-- [ ] 1.2 Add filtered dashboard transaction-list API using required month and optional account and label filters. (#32)
-- [ ] 1.3 Return uncategorized transaction rows consistently when label filters target uncategorized transactions. (#32)
-- [ ] 1.4 Add backend tests for month, account, label, uncategorized, credit/debit, and empty transaction-list cases. (#32)
+- [x] 1.1 Add response models for dashboard transaction rows with transaction, account, and label display fields. (#32)
+- [x] 1.2 Add filtered dashboard transaction-list API using required month and optional account and label filters. (#32)
+- [x] 1.3 Return uncategorized transaction rows consistently when label filters target uncategorized transactions. (#32)
+- [x] 1.4 Add backend tests for month, account, label, uncategorized, credit/debit, and empty transaction-list cases. (#32)
 
 ## 2. Frontend Data Client
 
