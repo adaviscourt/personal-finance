@@ -1,9 +1,9 @@
 ---
-name: opsx-work-issue
-description: Use when working GitHub Issues generated from an OpenSpec change, especially phrases like "work issue #N", "opsx issue #N", "dispatch next opsx issue", or "work the OpenSpec queue".
+name: openspec-work-issue
+description: Use when working GitHub Issues generated from an OpenSpec change, especially phrases like "work issue #N", "openspec issue #N", "dispatch next OpenSpec issue", or "work the OpenSpec queue".
 ---
 
-# OPSX Work Issue
+# OpenSpec Work Issue
 
 Work exactly one GitHub issue from an approved OpenSpec change. GitHub Issues are execution trackers; OpenSpec artifacts remain the source of truth.
 
@@ -23,13 +23,13 @@ Do not use this skill for creating proposals, designs, specs, or tasks. Use the 
 Prefer a GitHub issue number only:
 
 ```bash
-.opencode/scripts/opsx-dispatch-issue.sh 3
+.opencode/scripts/openspec-dispatch-issue.sh 3
 ```
 
 or:
 
 ```bash
-.opencode/scripts/opsx-dispatch-issue.sh '#3'
+.opencode/scripts/openspec-dispatch-issue.sh '#3'
 ```
 
 The script infers the OpenSpec change from the issue body marker:
@@ -43,8 +43,27 @@ If that marker is missing, it falls back to the issue milestone title.
 To select the next issue automatically, pass a change name with `--next`:
 
 ```bash
-.opencode/scripts/opsx-dispatch-issue.sh --next create-finance-import-mvp
+.opencode/scripts/openspec-dispatch-issue.sh --next create-finance-import-mvp
 ```
+
+To let the local machine pick up ready issues automatically, apply the
+`agent-ready` label to an open issue assigned to the current GitHub user, then
+run the watcher from the primary checkout:
+
+```bash
+.opencode/scripts/openspec-watch-agent-ready.sh
+```
+
+For cron/launchd-style polling, run one tick:
+
+```bash
+.opencode/scripts/openspec-watch-agent-ready.sh --once
+```
+
+The watcher spawns `.opencode/scripts/openspec-agent-ready-worker.sh <issue>`,
+which dispatches the issue, creates or reuses the worktree, removes
+`agent-ready`, adds `openspec-in-progress`, and runs `opencode run` in that
+worktree with this skill's workflow prompt.
 
 ## Worktree Rule
 
@@ -120,7 +139,8 @@ After the PR is opened, run the `caveman-review` skill against the PR before ask
 
 The dispatcher uses these labels:
 
-- `opsx-in-progress`
-- `opsx-done`
+- `agent-ready`
+- `openspec-in-progress`
+- `openspec-done`
 
-Only one issue in a milestone should have `opsx-in-progress` at a time. If another issue is in progress, stop and ask the user whether to continue that issue or clear the label.
+Only one issue in a milestone should have `openspec-in-progress` at a time. If another issue is in progress, stop and ask the user whether to continue that issue or clear the label.

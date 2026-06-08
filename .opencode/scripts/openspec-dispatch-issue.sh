@@ -4,8 +4,8 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  .opencode/scripts/opsx-dispatch-issue.sh <issue-number>
-  .opencode/scripts/opsx-dispatch-issue.sh --next <change-name>
+  .opencode/scripts/openspec-dispatch-issue.sh <issue-number>
+  .opencode/scripts/openspec-dispatch-issue.sh --next <change-name>
 
 Creates or reuses a git worktree for one OpenSpec-linked GitHub issue.
 
@@ -16,6 +16,19 @@ Arguments:
 Environment:
   WORKTREE_BASE  Optional parent directory for worktrees. Defaults to ../<repo-name>-worktrees.
 USAGE
+}
+
+abs_path() {
+  local path="$1"
+  if [[ -d "$path" ]]; then
+    (cd "$path" && pwd -P)
+  else
+    local dir
+    dir="$(dirname "$path")"
+    local base
+    base="$(basename "$path")"
+    (cd "$dir" && printf '%s/%s\n' "$(pwd -P)" "$base")
+  fi
 }
 
 MODE="issue"
@@ -48,7 +61,19 @@ if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
   exit 1
 fi
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
+WORKTREE_ROOT="$(git rev-parse --show-toplevel)"
+GIT_COMMON_DIR="$(git rev-parse --git-common-dir)"
+if [[ "$GIT_COMMON_DIR" != /* ]]; then
+  GIT_COMMON_DIR="$WORKTREE_ROOT/$GIT_COMMON_DIR"
+fi
+GIT_COMMON_DIR="$(abs_path "$GIT_COMMON_DIR")"
+
+if [[ "$(basename "$GIT_COMMON_DIR")" == ".git" ]]; then
+  REPO_ROOT="$(dirname "$GIT_COMMON_DIR")"
+else
+  REPO_ROOT="$WORKTREE_ROOT"
+fi
+
 cd "$REPO_ROOT"
 
 REPO_NAME="$(basename "$REPO_ROOT")"
@@ -60,19 +85,20 @@ if [[ -z "$DEFAULT_BRANCH" || "$DEFAULT_BRANCH" == "null" ]]; then
   DEFAULT_BRANCH="main"
 fi
 
-gh label create opsx-in-progress --description "OpenSpec issue currently being worked" --color F9D0C4 >/dev/null 2>&1 || true
-gh label create opsx-done --description "OpenSpec issue completed" --color 0E8A16 >/dev/null 2>&1 || true
+gh label create openspec-in-progress --description "OpenSpec issue currently being worked" --color F9D0C4 >/dev/null 2>&1 || true
+gh label create openspec-done --description "OpenSpec issue completed" --color 0E8A16 >/dev/null 2>&1 || true
+gh label create agent-ready --description "Ready for local opencode agent pickup" --color 5319E7 >/dev/null 2>&1 || true
 
 if [[ "$MODE" == "next" ]]; then
-  IN_PROGRESS="$(gh issue list --milestone "$CHANGE_NAME" --state open --label opsx-in-progress --json number,title --jq '.[] | "#\(.number) \(.title)"')"
+  IN_PROGRESS="$(gh issue list --milestone "$CHANGE_NAME" --state open --label openspec-in-progress --json number,title --jq '.[] | "#\(.number) \(.title)"')"
   if [[ -n "$IN_PROGRESS" ]]; then
     echo "Another issue is already in progress for milestone '$CHANGE_NAME':" >&2
     echo "$IN_PROGRESS" >&2
-    echo "Continue that issue or clear the opsx-in-progress label before dispatching the next one." >&2
+    echo "Continue that issue or clear the openspec-in-progress label before dispatching the next one." >&2
     exit 1
   fi
 
-  SELECTED="$(gh issue list --milestone "$CHANGE_NAME" --state open --json number,title,labels --jq 'sort_by(.number)[] | select(([.labels[].name] | index("opsx-in-progress")) | not) | "\(.number)|\(.title)"' | head -n 1)"
+  SELECTED="$(gh issue list --milestone "$CHANGE_NAME" --state open --json number,title,labels --jq 'sort_by(.number)[] | select(([.labels[].name] | index("openspec-in-progress")) | not) | "\(.number)|\(.title)"' | head -n 1)"
   if [[ -z "$SELECTED" ]]; then
     echo "No open issues found for milestone '$CHANGE_NAME'." >&2
     exit 1
@@ -117,11 +143,11 @@ if [[ -n "$MILESTONE_TITLE" && "$MILESTONE_TITLE" != "$CHANGE_NAME" ]]; then
   exit 1
 fi
 
-IN_PROGRESS_OTHER="$(gh issue list --milestone "$CHANGE_NAME" --state open --label opsx-in-progress --json number,title --jq ".[] | select(.number != $ISSUE_NUMBER) | \"#\\(.number) \\(.title)\"")"
+IN_PROGRESS_OTHER="$(gh issue list --milestone "$CHANGE_NAME" --state open --label openspec-in-progress --json number,title --jq ".[] | select(.number != $ISSUE_NUMBER) | \"#\\(.number) \\(.title)\"")"
 if [[ -n "$IN_PROGRESS_OTHER" ]]; then
   echo "Another issue is already in progress for milestone '$CHANGE_NAME':" >&2
   echo "$IN_PROGRESS_OTHER" >&2
-  echo "Continue that issue or clear the opsx-in-progress label before dispatching #$ISSUE_NUMBER." >&2
+  echo "Continue that issue or clear the openspec-in-progress label before dispatching #$ISSUE_NUMBER." >&2
   exit 1
 fi
 
@@ -137,7 +163,8 @@ else
   echo "Reusing existing worktree: $WORKTREE"
 fi
 
-gh issue edit "$ISSUE_NUMBER" --add-label opsx-in-progress >/dev/null
+gh issue edit "$ISSUE_NUMBER" --add-label openspec-in-progress >/dev/null
+gh issue edit "$ISSUE_NUMBER" --remove-label agent-ready >/dev/null 2>&1 || true
 
 cat <<EOF
 Dispatched OpenSpec issue.
@@ -151,7 +178,7 @@ Next:
   cd "$WORKTREE"
 
 Agent prompt:
-  Use the opsx-work-issue skill. Implement GitHub issue #$ISSUE_NUMBER for OpenSpec change $CHANGE_NAME.
+  Use the openspec-work-issue skill. Implement GitHub issue #$ISSUE_NUMBER for OpenSpec change $CHANGE_NAME.
 
 Rules:
   - Read proposal.md, design.md, tasks.md, and relevant specs.
