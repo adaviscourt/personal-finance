@@ -43,6 +43,10 @@ def add_transaction(
     amount: str,
     direction: str,
     label_slug: str | None,
+    merchant: str | None = None,
+    source_type: str | None = None,
+    source_category: str | None = None,
+    check_number: str | None = None,
 ) -> None:
     transaction_date = date.fromisoformat(transaction_date_text)
     normalized_description = normalize_description(description)
@@ -56,8 +60,12 @@ def add_transaction(
                 transaction_month=transaction_date_text[:7],
                 description=description,
                 normalized_description=normalized_description,
+                merchant=merchant,
                 amount=Decimal(amount),
                 direction=direction,
+                source_type=source_type,
+                source_category=source_category,
+                check_number=check_number,
                 duplicate_fingerprint=duplicate_fingerprint(
                     account_id,
                     transaction_date,
@@ -140,3 +148,120 @@ def test_dashboard_filters_by_selected_accounts_and_defaults_to_all() -> None:
         "month": month,
         "labels": [{"label_slug": "groceries", "label_name": "Groceries", "amount": "10.00"}],
     }
+
+
+def test_dashboard_transaction_list_returns_month_rows_with_display_fields() -> None:
+    month = "2098-06"
+    reset_month(month)
+    account = create_account(f"Dashboard row account {uuid4()}")
+    add_transaction(
+        account.id or 0,
+        "2098-06-02",
+        "Local Market",
+        "10.50",
+        "debit",
+        "groceries",
+        merchant="Market Co",
+        source_type="Card",
+        source_category="Food",
+        check_number="1002",
+    )
+    add_transaction(account.id or 0, "2098-07-02", "Next month", "1.00", "debit", "groceries")
+
+    response = TestClient(app).get(f"/dashboard/transactions?month={month}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["month"] == month
+    assert len(body["transactions"]) == 1
+    assert body["transactions"][0] == {
+        "id": body["transactions"][0]["id"],
+        "transaction_date": "2098-06-02",
+        "account": {"id": account.id, "name": account.name},
+        "description": "Local Market",
+        "merchant": "Market Co",
+        "label": {"id": label_id("groceries"), "slug": "groceries", "name": "Groceries"},
+        "direction": "debit",
+        "amount": "10.50",
+        "source_type": "Card",
+        "source_category": "Food",
+        "check_number": "1002",
+    }
+
+
+def test_dashboard_transaction_list_filters_by_accounts_and_labels() -> None:
+    month = "2098-08"
+    reset_month(month)
+    first_account = create_account(f"Dashboard tx first {uuid4()}")
+    second_account = create_account(f"Dashboard tx second {uuid4()}")
+    add_transaction(first_account.id or 0, "2098-08-01", "Market", "10.00", "debit", "groceries")
+    add_transaction(first_account.id or 0, "2098-08-02", "Pizza", "8.00", "debit", "dining")
+    add_transaction(second_account.id or 0, "2098-08-03", "Other market", "5.00", "debit", "groceries")
+
+    response = TestClient(app).get(
+        f"/dashboard/transactions?month={month}&account_ids={first_account.id}&label_slugs=groceries"
+    )
+
+    assert response.status_code == 200
+    assert [transaction["description"] for transaction in response.json()["transactions"]] == ["Market"]
+
+
+def test_dashboard_transaction_list_filters_uncategorized_rows() -> None:
+    month = "2098-09"
+    reset_month(month)
+    account = create_account(f"Dashboard uncategorized tx {uuid4()}")
+    add_transaction(account.id or 0, "2098-09-01", "No label", "10.00", "debit", None)
+    add_transaction(account.id or 0, "2098-09-02", "Explicit uncategorized", "8.00", "debit", "uncategorized")
+    add_transaction(account.id or 0, "2098-09-03", "Market", "5.00", "debit", "groceries")
+
+    response = TestClient(app).get(f"/dashboard/transactions?month={month}&label_slugs=uncategorized")
+
+    assert response.status_code == 200
+    transactions = response.json()["transactions"]
+    assert [transaction["description"] for transaction in transactions] == ["No label", "Explicit uncategorized"]
+    assert transactions[0]["label"] == {"id": None, "slug": "uncategorized", "name": "Uncategorized"}
+    assert transactions[1]["label"] == {
+        "id": label_id("uncategorized"),
+        "slug": "uncategorized",
+        "name": "Uncategorized",
+    }
+
+
+def test_dashboard_transaction_list_includes_credits_and_orders_stably() -> None:
+    month = "2098-10"
+    reset_month(month)
+    account = create_account(f"Dashboard credit tx {uuid4()}")
+    add_transaction(account.id or 0, "2098-10-02", "Second date", "7.00", "debit", "dining")
+    add_transaction(account.id or 0, "2098-10-01", "Paycheck", "100.00", "credit", "paychecks")
+    add_transaction(account.id or 0, "2098-10-01", "Same day debit", "3.00", "debit", "groceries")
+
+    response = TestClient(app).get(f"/dashboard/transactions?month={month}")
+
+    assert response.status_code == 200
+    transactions = response.json()["transactions"]
+    assert [transaction["description"] for transaction in transactions] == ["Paycheck", "Same day debit", "Second date"]
+    assert [transaction["direction"] for transaction in transactions] == ["credit", "debit", "debit"]
+
+
+def test_dashboard_transaction_list_returns_empty_transactions() -> None:
+    month = "2098-11"
+    reset_month(month)
+
+    response = TestClient(app).get(f"/dashboard/transactions?month={month}")
+
+    assert response.status_code == 200
+    assert response.json() == {"month": month, "transactions": []}
+
+
+def test_dashboard_transaction_list_filters_uncategorized_by_label_id() -> None:
+    month = "2098-12"
+    reset_month(month)
+    account = create_account(f"Dashboard uncategorized id tx {uuid4()}")
+    uncategorized_id = label_id("uncategorized")
+    add_transaction(account.id or 0, "2098-12-01", "No label", "10.00", "debit", None)
+    add_transaction(account.id or 0, "2098-12-02", "Market", "5.00", "debit", "groceries")
+
+    response = TestClient(app).get(f"/dashboard/transactions?month={month}&label_ids={uncategorized_id}")
+
+    assert response.status_code == 200
+    assert [transaction["description"] for transaction in response.json()["transactions"]] == ["No label"]
