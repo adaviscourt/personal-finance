@@ -13,12 +13,12 @@
 
 ## 3. App Navigation And Routes
 
-- [ ] 3.1 Add primary app navigation with dashboard, import, labeling, and accounts links. (#34)
-- [ ] 3.2 Split route components so `/` renders dashboard-only content. (#34)
-- [ ] 3.3 Move CSV import, template editing, transformed preview, duplicate warnings, and confirmation into the import route. (#34)
-- [ ] 3.4 Move transaction label rule creation and rule list review into the labeling route. (#34)
-- [ ] 3.5 Move account listing, creation, rename, delete, and confirmation controls into the accounts route. (#34)
-- [ ] 3.6 Remove persistent backend health and database status UI from user-facing app surfaces. (#34)
+- [x] 3.1 Add primary app navigation with dashboard, import, labeling, and accounts links. (#34)
+- [x] 3.2 Split route components so `/` renders dashboard-only content. (#34)
+- [x] 3.3 Move CSV import, template editing, transformed preview, duplicate warnings, and confirmation into the import route. (#34)
+- [x] 3.4 Move transaction label rule creation and rule list review into the labeling route. (#34)
+- [x] 3.5 Move account listing, creation, rename, delete, and confirmation controls into the accounts route. (#34)
+- [x] 3.6 Remove persistent backend health and database status UI from user-facing app surfaces. (#34)
 
 ## 4. Dashboard Experience
 
