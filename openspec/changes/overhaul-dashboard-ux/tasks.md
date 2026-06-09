@@ -7,9 +7,9 @@
 
 ## 2. Frontend Data Client
 
-- [ ] 2.1 Add frontend API types and client function for dashboard transaction rows. (#29)
-- [ ] 2.2 Keep existing account and label list client functions reusable by dashboard and modules. (#29)
-- [ ] 2.3 Update frontend tests or mocks for new dashboard transaction data. (#29)
+- [x] 2.1 Add frontend API types and client function for dashboard transaction rows. (#29)
+- [x] 2.2 Keep existing account and label list client functions reusable by dashboard and modules. (#29)
+- [x] 2.3 Update frontend tests or mocks for new dashboard transaction data. (#29)
 
 ## 3. App Navigation And Routes
 

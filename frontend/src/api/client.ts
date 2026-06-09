@@ -133,6 +133,42 @@ export type DashboardSpendingByLabel = {
   labels: DashboardSpendingLabel[];
 };
 
+export type DashboardTransactionAccount = {
+  id: number;
+  name: string;
+};
+
+export type DashboardTransactionLabel = {
+  id: number | null;
+  slug: string;
+  name: string;
+};
+
+export type DashboardTransactionRow = {
+  id: number;
+  transaction_date: string;
+  account: DashboardTransactionAccount;
+  description: string;
+  merchant: string | null;
+  label: DashboardTransactionLabel;
+  direction: "debit" | "credit";
+  amount: string;
+  source_type: string | null;
+  source_category: string | null;
+  check_number: string | null;
+};
+
+export type DashboardTransactionList = {
+  month: string;
+  transactions: DashboardTransactionRow[];
+};
+
+export type DashboardTransactionFilters = {
+  accountIds?: number[];
+  labelIds?: number[];
+  labelSlugs?: string[];
+};
+
 export async function getHealth(): Promise<HealthResponse> {
   const response = await api.get<HealthResponse>("/health");
   return response.data;
@@ -253,6 +289,22 @@ export async function createLabelRule(payload: LabelRulePayload): Promise<LabelR
 export async function getDashboardSpendingByLabel(month: string, accountIds: number[] = []): Promise<DashboardSpendingByLabel> {
   const response = await api.get<DashboardSpendingByLabel>("/dashboard/spending-by-label", {
     params: { month, account_ids: accountIds },
+    paramsSerializer: { indexes: null },
+  });
+  return response.data;
+}
+
+export async function getDashboardTransactions(
+  month: string,
+  filters: DashboardTransactionFilters = {},
+): Promise<DashboardTransactionList> {
+  const response = await api.get<DashboardTransactionList>("/dashboard/transactions", {
+    params: {
+      month,
+      account_ids: filters.accountIds ?? [],
+      label_ids: filters.labelIds ?? [],
+      label_slugs: filters.labelSlugs ?? [],
+    },
     paramsSerializer: { indexes: null },
   });
   return response.data;
