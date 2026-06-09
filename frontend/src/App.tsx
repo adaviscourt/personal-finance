@@ -847,7 +847,7 @@ function Home() {
               </div>
               {importError ? <p className="preview-error">{importError}</p> : null}
               {importStatus ? <p className="template-status">{importStatus}</p> : null}
-              {importResult ? (
+              {importResult && importResult.inserted_count > 0 ? (
                 <Link
                   className="dashboard-review-link"
                   to="/"

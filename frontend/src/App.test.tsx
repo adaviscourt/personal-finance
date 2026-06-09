@@ -560,4 +560,42 @@ describe("App", () => {
       expect(mockedGetDashboardTransactions).toHaveBeenLastCalledWith("2026-03", { accountIds: [42], labelSlugs: [] });
     });
   });
+
+  it("does not show dashboard handoff when duplicate warnings block inserts", async () => {
+    mockedPreviewCsv.mockResolvedValue({
+      headers: ["Date", "Description", "Amount"],
+      source_columns: ["Date", "Description", "Amount"],
+      rows: [{ Date: "2026-03-15", Description: "Coffee", Amount: "-4.50" }],
+    });
+    mockedPrepareImport.mockResolvedValue({
+      upload_file_id: 22,
+      row_count: 1,
+      transformed_preview: [{ date: "2026-03-15", description: "Coffee", amount: "4.50", direction: "debit" }],
+      duplicate_candidates: [],
+    });
+    mockedConfirmImport.mockResolvedValue({
+      upload_file_id: 22,
+      inserted_count: 0,
+      duplicate_candidates: [{ row_number: 1, existing_transaction_id: 9, date: "2026-03-15", description: "Coffee", amount: "4.50", direction: "debit" }],
+    });
+
+    renderApp("/import");
+
+    fireEvent.change(screen.getByLabelText("Statement CSV"), {
+      target: { files: [new File(["Date,Description,Amount\n2026-03-15,Coffee,-4.50\n"], "statement.csv")] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+    expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Active account"), { target: { value: "42" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[3], { target: { value: "Amount" } });
+    fireEvent.click(screen.getByRole("button", { name: "Prepare Import" }));
+    expect(await screen.findByText("Prepared 1 row(s). Review transformed preview before confirming.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
+
+    expect(await screen.findByText("Duplicate warning found; no transactions inserted.")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /imports on dashboard/i })).not.toBeInTheDocument();
+  });
 });
