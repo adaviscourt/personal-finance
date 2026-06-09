@@ -1,5 +1,10 @@
 # personal-finance
 
+![specs](https://raw.githubusercontent.com/adaviscourt/personal-finance/gh-pages/badges/number_of_specs.svg)
+![requirements](https://raw.githubusercontent.com/adaviscourt/personal-finance/gh-pages/badges/number_of_requirements.svg)
+![tasks](https://raw.githubusercontent.com/adaviscourt/personal-finance/gh-pages/badges/tasks_status.svg)
+![changes](https://raw.githubusercontent.com/adaviscourt/personal-finance/gh-pages/badges/open_changes.svg)
+
 Docker-runnable personal finance MVP with a Vite + React frontend, FastAPI backend, SQLite persistence, and Polars CSV processing.
 
 ## Setup
