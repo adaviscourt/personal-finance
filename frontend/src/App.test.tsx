@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -119,7 +119,7 @@ describe("App", () => {
     expect(screen.queryByText("Backend Health")).not.toBeInTheDocument();
     expect(screen.getByText("Personal Finance MVP")).toBeInTheDocument();
     expect(await screen.findByText("Monthly transaction review.")).toBeInTheDocument();
-    expect(screen.queryByText("Preview source rows before mapping.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Import transactions in guided order.")).not.toBeInTheDocument();
     expect(screen.queryByText("Save reusable match rules.")).not.toBeInTheDocument();
     expect(screen.queryByText("Manage import accounts.")).not.toBeInTheDocument();
   });
@@ -128,7 +128,37 @@ describe("App", () => {
     renderApp("/import");
 
     expect(screen.getByRole("link", { name: "Import" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByText("Preview source rows before mapping.")).toBeInTheDocument();
+    expect(screen.getByText("Import transactions in guided order.")).toBeInTheDocument();
+  });
+
+  it("presents import steps and contextual validation before preparing", async () => {
+    mockedPreviewCsv.mockResolvedValue({
+      headers: ["Date", "Description", "Amount"],
+      source_columns: ["Date", "Description", "Amount"],
+      rows: [{ Date: "2026-01-01", Description: "Coffee", Amount: "-4.50" }],
+    });
+
+    renderApp("/import");
+
+    expect(screen.getByText("1. Source file")).toBeInTheDocument();
+    expect(screen.getByText("2. Mappings")).toBeInTheDocument();
+    expect(screen.getByText("3. Transformed preview")).toBeInTheDocument();
+    expect(screen.getByText("4. Warning review")).toBeInTheDocument();
+    expect(screen.getByText("5. Confirm")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+
+    expect(screen.getByText("Choose a source CSV file first.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Statement CSV"), {
+      target: { files: [new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv")] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+
+    expect(await screen.findByText("Before preparing")).toBeInTheDocument();
+    expect(screen.getByText("Map required field(s): date, description, amount, direction.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Active account"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Prepare Import" }));
+
+    expect(screen.getByText("Choose the account receiving this import before preparing import.")).toBeInTheDocument();
   });
 
   it("uploads a CSV and renders source columns with raw preview rows", async () => {
@@ -484,7 +514,88 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
 
     expect(await screen.findByText("Imported 1 transaction(s).")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Review January 2026 imports on dashboard" })).toBeInTheDocument();
     expect(mockedPrepareImport).toHaveBeenCalledWith(file, 42, expect.any(Object));
     expect(mockedConfirmImport).toHaveBeenCalledWith(22, expect.any(Object));
+  });
+
+  it("hands off successful imports to dashboard review for imported month", async () => {
+    mockedPreviewCsv.mockResolvedValue({
+      headers: ["Date", "Description", "Amount"],
+      source_columns: ["Date", "Description", "Amount"],
+      rows: [{ Date: "2026-03-15", Description: "Coffee", Amount: "-4.50" }],
+    });
+    mockedPrepareImport.mockResolvedValue({
+      upload_file_id: 22,
+      row_count: 1,
+      transformed_preview: [{ date: "2026-03-15", description: "Coffee", amount: "4.50", direction: "debit" }],
+      duplicate_candidates: [],
+    });
+    mockedConfirmImport.mockResolvedValue({ upload_file_id: 22, inserted_count: 1, duplicate_candidates: [] });
+
+    renderApp("/import");
+
+    const file = new File(["Date,Description,Amount\n2026-03-15,Coffee,-4.50\n"], "statement.csv", {
+      type: "text/csv",
+    });
+    fireEvent.change(screen.getByLabelText("Statement CSV"), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+
+    expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Active account"), { target: { value: "42" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[3], { target: { value: "Amount" } });
+    fireEvent.click(screen.getByRole("button", { name: "Prepare Import" }));
+    expect(await screen.findByText("Prepared 1 row(s). Review transformed preview before confirming.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
+
+    const reviewLink = await screen.findByRole("link", { name: "Review March 2026 imports on dashboard" });
+    fireEvent.click(reviewLink);
+
+    expect(await screen.findByText("Monthly transaction review.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Dashboard month")).toHaveValue("2026-03");
+    await waitFor(() => {
+      expect(mockedGetDashboardTransactions).toHaveBeenLastCalledWith("2026-03", { accountIds: [42], labelSlugs: [] });
+    });
+  });
+
+  it("does not show dashboard handoff when duplicate warnings block inserts", async () => {
+    mockedPreviewCsv.mockResolvedValue({
+      headers: ["Date", "Description", "Amount"],
+      source_columns: ["Date", "Description", "Amount"],
+      rows: [{ Date: "2026-03-15", Description: "Coffee", Amount: "-4.50" }],
+    });
+    mockedPrepareImport.mockResolvedValue({
+      upload_file_id: 22,
+      row_count: 1,
+      transformed_preview: [{ date: "2026-03-15", description: "Coffee", amount: "4.50", direction: "debit" }],
+      duplicate_candidates: [],
+    });
+    mockedConfirmImport.mockResolvedValue({
+      upload_file_id: 22,
+      inserted_count: 0,
+      duplicate_candidates: [{ row_number: 1, existing_transaction_id: 9, date: "2026-03-15", description: "Coffee", amount: "4.50", direction: "debit" }],
+    });
+
+    renderApp("/import");
+
+    fireEvent.change(screen.getByLabelText("Statement CSV"), {
+      target: { files: [new File(["Date,Description,Amount\n2026-03-15,Coffee,-4.50\n"], "statement.csv")] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+    expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Active account"), { target: { value: "42" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[3], { target: { value: "Amount" } });
+    fireEvent.click(screen.getByRole("button", { name: "Prepare Import" }));
+    expect(await screen.findByText("Prepared 1 row(s). Review transformed preview before confirming.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
+
+    expect(await screen.findByText("Duplicate warning found; no transactions inserted.")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /imports on dashboard/i })).not.toBeInTheDocument();
   });
 });
