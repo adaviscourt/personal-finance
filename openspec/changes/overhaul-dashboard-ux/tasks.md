@@ -30,9 +30,9 @@
 
 ## 5. Guided Import And Module Handoff
 
-- [ ] 5.1 Present import workflow in source file, mappings, transformed preview, warning review, confirm order. (#28)
-- [ ] 5.2 Show contextual import validation for missing file, account, or mappings. (#28)
-- [ ] 5.3 After successful import, provide a clear path to review the imported month in the dashboard. (#28)
+- [x] 5.1 Present import workflow in source file, mappings, transformed preview, warning review, confirm order. (#28)
+- [x] 5.2 Show contextual import validation for missing file, account, or mappings. (#28)
+- [x] 5.3 After successful import, provide a clear path to review the imported month in the dashboard. (#28)
 
 ## 6. Visual System
 

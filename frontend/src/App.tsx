@@ -57,6 +57,21 @@ function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
 }
 
+function importReviewMonth(preparedImport: ImportPrepareResponse | null): string | null {
+  const datedRow = preparedImport?.transformed_preview.find((row) => {
+    const value = row.date;
+    return typeof value === "string" && /^\d{4}-\d{2}/.test(value);
+  });
+  const date = datedRow?.date;
+  return typeof date === "string" ? date.slice(0, 7) : null;
+}
+
+function formatMonthLabel(month: string): string {
+  const [year, monthNumber] = month.split("-");
+  const monthName = new Date(Number(year), Number(monthNumber) - 1, 1).toLocaleString("en-US", { month: "long" });
+  return `${monthName} ${year}`;
+}
+
 function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<CsvPreviewResponse | null>(null);
@@ -170,6 +185,13 @@ function Home() {
   }));
   const dashboardTotal = dashboardChartData.reduce((total, item) => total + item.value, 0);
   const activeAccount = activeAccountId === "" ? null : accounts.find((account) => account.id === activeAccountId) ?? null;
+  const missingMappingFields = REQUIRED_FIELDS.filter((field) => !mappingDraft[field]);
+  const importValidationItems = [
+    selectedFile ? null : "Choose a source CSV file.",
+    activeAccountId === "" ? "Choose the account receiving this import." : null,
+    missingMappingFields.length > 0 ? `Map required field(s): ${missingMappingFields.join(", ")}.` : null,
+  ].filter((item): item is string => Boolean(item));
+  const reviewMonth = importReviewMonth(preparedImport) ?? selectedMonth;
 
   function refreshDashboard() {
     setDashboardError(null);
@@ -345,7 +367,7 @@ function Home() {
   async function handlePreviewSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedFile) {
-      setPreviewError("Choose a CSV file first.");
+      setPreviewError("Choose a source CSV file first.");
       return;
     }
 
@@ -591,8 +613,15 @@ function Home() {
         )} />
         <Route path="/import" element={(
           <section className="upload-panel" aria-labelledby="upload-heading">
-        <p className="eyebrow">CSV Upload Preview</p>
-        <h2 id="upload-heading">Preview source rows before mapping.</h2>
+        <p className="eyebrow">CSV Import</p>
+        <h2 id="upload-heading">Import transactions in guided order.</h2>
+        <ol className="workflow-steps" aria-label="Import workflow order">
+          <li><strong>1. Source file</strong><span>Select and preview the CSV rows.</span></li>
+          <li><strong>2. Mappings</strong><span>Choose or edit required field mappings.</span></li>
+          <li><strong>3. Transformed preview</strong><span>Prepare normalized transaction rows.</span></li>
+          <li><strong>4. Warning review</strong><span>Review duplicate candidates before insert.</span></li>
+          <li><strong>5. Confirm</strong><span>Import, then review the month on the dashboard.</span></li>
+        </ol>
         <form className="upload-form" onSubmit={handlePreviewSubmit}>
           <label className="file-picker">
             <span>Statement CSV</span>
@@ -724,6 +753,16 @@ function Home() {
                 <h3>Transformed Preview</h3>
                 <p>Select an existing account before preparing an import.</p>
               </div>
+              {importValidationItems.length > 0 ? (
+                <div className="import-validation" aria-label="Import requirements">
+                  <strong>Before preparing</strong>
+                  <ul>
+                    {importValidationItems.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               <label>
                 <span>Active account</span>
                 <select
@@ -751,8 +790,12 @@ function Home() {
                     setImportError(null);
                     setImportStatus(null);
                     setImportResult(null);
-                    if (!selectedFile || activeAccountId === "") {
-                      setImportError("Choose a CSV file and active account before preparing import.");
+                    if (!selectedFile) {
+                      setImportError("Choose a source CSV file before preparing import.");
+                      return;
+                    }
+                    if (activeAccountId === "") {
+                      setImportError("Choose the account receiving this import before preparing import.");
                       return;
                     }
                     const missingField = REQUIRED_FIELDS.find((field) => !mappingDraft[field]);
@@ -804,6 +847,19 @@ function Home() {
               </div>
               {importError ? <p className="preview-error">{importError}</p> : null}
               {importStatus ? <p className="template-status">{importStatus}</p> : null}
+              {importResult ? (
+                <Link
+                  className="dashboard-review-link"
+                  to="/"
+                  onClick={() => {
+                    setSelectedMonth(reviewMonth);
+                    setDashboardAccountIds(activeAccountId === "" ? [] : [activeAccountId]);
+                    setDashboardLabelSlug("");
+                  }}
+                >
+                  Review {formatMonthLabel(reviewMonth)} imports on dashboard
+                </Link>
+              ) : null}
               {preparedImport?.duplicate_candidates.length ? (
                 <p className="preview-error">{preparedImport.duplicate_candidates.length} duplicate candidate(s) found before import.</p>
               ) : null}
