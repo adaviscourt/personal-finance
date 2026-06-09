@@ -30,16 +30,18 @@
 
 ## 5. Guided Import And Module Handoff
 
-- [x] 5.1 Present import workflow in source file, mappings, transformed preview, warning review, confirm order. (#28)
+- [x] 5.1 Present import workflow in account, source file, mappings, transformed preview, warning review, confirm order. (#28)
 - [x] 5.2 Show contextual import validation for missing file, account, or mappings. (#28)
 - [x] 5.3 After successful import, provide a clear path to review the imported month in the dashboard. (#28)
+- [x] 5.4 Require account-scoped import templates and route users without accounts to account management.
+- [x] 5.5 Remove bootstrap default account creation so first-run import uses explicit account setup.
 
 ## 6. Visual System
 
-- [ ] 6.1 Replace pastel hero/card styling with restrained product surfaces aligned to `PRODUCT.md`. (#31)
-- [ ] 6.2 Apply consistent buttons, inputs, selects, tables, focus states, and status messages across modules. (#31)
-- [ ] 6.3 Use FreeTaxUSA-inspired green primary actions and blue support accents with WCAG AA contrast. (#31)
-- [ ] 6.4 Remove decorative eyebrows and oversized hero heading treatment from app modules. (#31)
+- [x] 6.1 Replace pastel hero/card styling with restrained product surfaces aligned to `PRODUCT.md`. (#31)
+- [x] 6.2 Apply consistent buttons, inputs, selects, tables, focus states, and status messages across modules. (#31)
+- [x] 6.3 Use FreeTaxUSA-inspired green primary actions and blue support accents with WCAG AA contrast. (#31)
+- [x] 6.4 Remove decorative eyebrows and oversized hero heading treatment from app modules. (#31)
 
 ## 7. Verification
 

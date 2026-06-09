@@ -17,3 +17,9 @@ The system SHALL make accounts available as selectors in dashboard and import wo
 #### Scenario: User selects import account
 - **WHEN** the user prepares an import
 - **THEN** available accounts can be selected for import association without showing account creation, rename, or delete controls in the import workflow
+
+## REMOVED Requirements
+
+### Requirement: Preserve bootstrap default account
+**Reason**: Import now starts with explicit account selection and routes users without accounts to account management, so a synthetic default account is no longer needed for first-run workflows.
+**Migration**: Stop creating `Default Account` for clean databases. Existing `Default Account` rows remain user-managed and may be deleted through account management.

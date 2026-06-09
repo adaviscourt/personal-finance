@@ -86,6 +86,7 @@ function Home() {
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateSaving, setTemplateSaving] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
   const [activeAccountId, setActiveAccountId] = useState<number | "">("");
   const [newAccountName, setNewAccountName] = useState("");
   const [renamingAccountId, setRenamingAccountId] = useState<number | null>(null);
@@ -114,6 +115,7 @@ function Home() {
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const previewRequestId = useRef(0);
+  const templateRequestId = useRef(0);
 
   useEffect(() => {
     refreshAccounts();
@@ -121,12 +123,31 @@ function Home() {
 
   useEffect(() => {
     if (activeAccountId === "") {
+      templateRequestId.current += 1;
       setTemplates([]);
       return;
     }
+
+    setSelectedTemplateId("new");
+    setTemplateName("");
+    setMappingDraft(createEmptyMappings());
+    setTransformDraft(createDefaultTransforms());
+    setPreparedImport(null);
+    setImportResult(null);
+    const requestId = templateRequestId.current + 1;
+    templateRequestId.current = requestId;
+    setTemplateError(null);
     listImportTemplates(activeAccountId)
-      .then(setTemplates)
-      .catch(() => setTemplateError("Could not load import templates."));
+      .then((nextTemplates) => {
+        if (requestId === templateRequestId.current) {
+          setTemplates(nextTemplates);
+        }
+      })
+      .catch(() => {
+        if (requestId === templateRequestId.current) {
+          setTemplateError("Could not load import templates.");
+        }
+      });
   }, [activeAccountId]);
 
   useEffect(() => {
@@ -224,6 +245,7 @@ function Home() {
   }
 
   function refreshAccounts() {
+    setAccountsLoaded(false);
     return listAccounts()
       .then((nextAccounts) => {
         setAccounts(nextAccounts);
@@ -235,7 +257,8 @@ function Home() {
         });
         setDashboardAccountIds((currentIds) => currentIds.filter((id) => nextAccounts.some((account) => account.id === id)));
       })
-      .catch(() => setAccountError("Could not load accounts."));
+      .catch(() => setAccountError("Could not load accounts."))
+      .finally(() => setAccountsLoaded(true));
   }
 
   async function handleCreateAccount(event: FormEvent<HTMLFormElement>) {
@@ -333,6 +356,10 @@ function Home() {
       setTemplateError("Name the template before saving.");
       return;
     }
+    if (activeAccountId === "") {
+      setTemplateError("Choose the account for this template before saving.");
+      return;
+    }
 
     const missingField = REQUIRED_FIELDS.find((field) => !mappingDraft[field]);
     if (missingField) {
@@ -341,22 +368,26 @@ function Home() {
     }
 
     setTemplateSaving(true);
+    const saveRequestId = templateRequestId.current + 1;
+    templateRequestId.current = saveRequestId;
     try {
       const selectedTemplate =
         selectedTemplateId === "new"
           ? null
           : templates.find((template) => template.id === selectedTemplateId) ?? null;
-      const payload = { name: templateName, account_id: selectedTemplate?.account_id ?? (activeAccountId || null), config: buildTemplateConfig() };
+      const payload = { name: templateName, account_id: selectedTemplate?.account_id ?? activeAccountId, config: buildTemplateConfig() };
       const savedTemplate =
         selectedTemplateId === "new"
           ? await createImportTemplate(payload)
           : await updateImportTemplate(selectedTemplateId, payload);
-      setTemplates((currentTemplates) => {
-        const withoutSaved = currentTemplates.filter((template) => template.id !== savedTemplate.id);
-        return [...withoutSaved, savedTemplate].sort((first, second) => first.name.localeCompare(second.name));
-      });
-      setSelectedTemplateId(savedTemplate.id);
-      setTemplateStatus("Template saved for future imports.");
+      if (saveRequestId === templateRequestId.current) {
+        setTemplates((currentTemplates) => {
+          const withoutSaved = currentTemplates.filter((template) => template.id !== savedTemplate.id);
+          return [...withoutSaved, savedTemplate].sort((first, second) => first.name.localeCompare(second.name));
+        });
+        setSelectedTemplateId(savedTemplate.id);
+        setTemplateStatus("Template saved for future imports.");
+      }
     } catch {
       setTemplateError("Could not save that template. Check required mappings and transform settings.");
     } finally {
@@ -366,6 +397,10 @@ function Home() {
 
   async function handlePreviewSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (activeAccountId === "") {
+      setPreviewError("Choose the account before previewing a CSV.");
+      return;
+    }
     if (!selectedFile) {
       setPreviewError("Choose a source CSV file first.");
       return;
@@ -429,9 +464,9 @@ function Home() {
     <main className="app-shell">
       <header className="hero">
         <div>
-          <p className="eyebrow">Personal Finance MVP</p>
-          <h1>Review monthly transactions with focused workflows.</h1>
-          <p className="intro">Use dedicated modules for dashboard review, imports, labeling, and account management.</p>
+          <p className="app-title">Personal Finance</p>
+          <h1>Review monthly transactions</h1>
+          <p className="intro">Move between dashboard review, imports, labeling, and account management without crowding one page.</p>
         </div>
         <nav className="app-nav" aria-label="Primary app modules">
           <NavLink to="/" end>Dashboard</NavLink>
@@ -445,8 +480,7 @@ function Home() {
           <section className="dashboard-panel" aria-labelledby="dashboard-heading">
         <div className="dashboard-header">
           <div>
-            <p className="eyebrow">Finance Dashboard</p>
-            <h2 id="dashboard-heading">Monthly transaction review.</h2>
+            <h2 id="dashboard-heading">Monthly transaction review</h2>
           </div>
           <label className="month-picker">
             <span>Dashboard month</span>
@@ -560,8 +594,7 @@ function Home() {
         )} />
         <Route path="/accounts" element={(
           <section className="account-panel" aria-labelledby="accounts-heading">
-        <p className="eyebrow">Accounts</p>
-        <h2 id="accounts-heading">Manage import accounts.</h2>
+        <h2 id="accounts-heading">Manage import accounts</h2>
         <form className="account-create-form" onSubmit={handleCreateAccount}>
           <label>
             <span>New account name</span>
@@ -613,15 +646,44 @@ function Home() {
         )} />
         <Route path="/import" element={(
           <section className="upload-panel" aria-labelledby="upload-heading">
-        <p className="eyebrow">CSV Import</p>
-        <h2 id="upload-heading">Import transactions in guided order.</h2>
+        <h2 id="upload-heading">Import transactions in guided order</h2>
         <ol className="workflow-steps" aria-label="Import workflow order">
-          <li><strong>1. Source file</strong><span>Select and preview the CSV rows.</span></li>
-          <li><strong>2. Mappings</strong><span>Choose or edit required field mappings.</span></li>
-          <li><strong>3. Transformed preview</strong><span>Prepare normalized transaction rows.</span></li>
-          <li><strong>4. Warning review</strong><span>Review duplicate candidates before insert.</span></li>
+          <li><strong>1. Account</strong><span>Choose where these transactions belong.</span></li>
+          <li><strong>2. Source file</strong><span>Select and preview the CSV rows.</span></li>
+          <li><strong>3. Mappings</strong><span>Choose or edit account template mappings.</span></li>
+          <li><strong>4. Review</strong><span>Prepare rows and check duplicate warnings.</span></li>
           <li><strong>5. Confirm</strong><span>Import, then review the month on the dashboard.</span></li>
         </ol>
+        {!accountsLoaded ? (
+          <div className="import-empty" role="status">Loading accounts...</div>
+        ) : accounts.length === 0 ? (
+          <div className="import-empty" role="status">
+            <h3>Create an account before importing</h3>
+            <p>Imports and templates are tied to an account. Add one account, then return here to upload a CSV.</p>
+            <Link className="dashboard-review-link" to="/accounts">Go to accounts</Link>
+          </div>
+        ) : (
+          <>
+        <label className="import-account-step">
+          <span>Import account</span>
+          <select
+            aria-label="Import account"
+            value={activeAccountId}
+            onChange={(event) => {
+              setActiveAccountId(event.target.value ? Number(event.target.value) : "");
+              setPreparedImport(null);
+              setImportResult(null);
+            }}
+          >
+            <option value="">Choose account</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+          </select>
+          <small>Templates shown below are tied to this account.</small>
+        </label>
         <form className="upload-form" onSubmit={handlePreviewSubmit}>
           <label className="file-picker">
             <span>Statement CSV</span>
@@ -751,7 +813,7 @@ function Home() {
             <div className="import-confirmation" aria-label="Import confirmation">
               <div>
                 <h3>Transformed Preview</h3>
-                <p>Select an existing account before preparing an import.</p>
+                <p>Prepare normalized rows for {activeAccount?.name ?? "the selected account"} before confirming import.</p>
               </div>
               {importValidationItems.length > 0 ? (
                 <div className="import-validation" aria-label="Import requirements">
@@ -763,25 +825,6 @@ function Home() {
                   </ul>
                 </div>
               ) : null}
-              <label>
-                <span>Active account</span>
-                <select
-                  value={activeAccountId}
-                  onChange={(event) => {
-                    setActiveAccountId(event.target.value ? Number(event.target.value) : "");
-                    setPreparedImport(null);
-                    setImportResult(null);
-                  }}
-                >
-                  <option value="">Choose account</option>
-                  {accounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {activeAccount ? <p>Templates are scoped to {activeAccount.name}; global templates also appear.</p> : null}
               <div className="import-actions">
                 <button
                   type="button"
@@ -915,12 +958,13 @@ function Home() {
             </div>
           </div>
         ) : null}
+        </>
+        )}
       </section>
         )} />
         <Route path="/labeling" element={(
           <section className="label-panel" aria-labelledby="label-heading">
-        <p className="eyebrow">Transaction Labeling</p>
-        <h2 id="label-heading">Save reusable match rules.</h2>
+        <h2 id="label-heading">Transaction labeling rules</h2>
         <p className="label-intro">
           Assign fixed labels by matching merchant or description text. Custom labels are not available in the MVP;
           unmatched transactions stay uncategorized.

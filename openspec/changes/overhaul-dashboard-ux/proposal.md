@@ -27,6 +27,7 @@ The current home page mixes dashboard review, account management, CSV import, te
 
 - `finance-dashboard`: Dashboard requirements change from chart-only spending summary to dashboard-only home with transaction table and month/account/label filtering.
 - `transaction-import`: Import workflow requirements change so upload, templates, preview, and confirmation live in a dedicated import module instead of the home page.
+- `import-templates`: Import template requirements change so templates are account-scoped rather than globally reusable.
 - `transaction-labeling`: Label rule management requirements change so labeling controls live in a dedicated labeling module while labels remain available as dashboard filters.
 - `account-management`: Account management requirements change so account CRUD lives outside the home dashboard while accounts remain available in dashboard and import selectors.
 

@@ -41,7 +41,7 @@ export type ImportTemplateConfig = {
 export type ImportTemplate = {
   id: number;
   name: string;
-  account_id: number | null;
+  account_id: number;
   config: ImportTemplateConfig;
   created_at: string;
   updated_at: string;
@@ -49,7 +49,7 @@ export type ImportTemplate = {
 
 export type ImportTemplatePayload = {
   name: string;
-  account_id: number | null;
+  account_id: number;
   config: ImportTemplateConfig;
 };
 

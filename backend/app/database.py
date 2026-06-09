@@ -23,9 +23,6 @@ LABEL_TAXONOMY = (
     ("subscriptions", "Subscriptions"),
     ("transfers", "Transfers"),
 )
-DEFAULT_ACCOUNT_NAME = "Default Account"
-
-
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -148,7 +145,6 @@ def init_db(database_engine=engine) -> None:
     SQLModel.metadata.create_all(database_engine)
     create_schema_indexes(database_engine)
     seed_labels(database_engine)
-    seed_default_account(database_engine)
 
 
 def create_schema_indexes(database_engine=engine) -> None:
@@ -172,14 +168,6 @@ def seed_labels(database_engine=engine) -> None:
             if existing_label is None:
                 session.add(Label(slug=slug, name=name))
         session.commit()
-
-
-def seed_default_account(database_engine=engine) -> None:
-    with Session(database_engine) as session:
-        existing_account = session.exec(select(Account).where(Account.name == DEFAULT_ACCOUNT_NAME)).first()
-        if existing_account is None:
-            session.add(Account(name=DEFAULT_ACCOUNT_NAME, institution="Manual import", account_type="checking"))
-            session.commit()
 
 
 def check_database() -> bool:
