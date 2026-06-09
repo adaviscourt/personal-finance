@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, Route, Routes } from "react-router-dom";
+import { Link, NavLink, Route, Routes } from "react-router-dom";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import {
@@ -10,7 +10,6 @@ import {
   createImportTemplate,
   deleteAccount,
   getDashboardSpendingByLabel,
-  getHealth,
   listAccounts,
   listLabelRules,
   listLabels,
@@ -23,7 +22,6 @@ import {
   type ConfirmImportResponse,
   type CsvPreviewResponse,
   type DashboardSpendingLabel,
-  type HealthResponse,
   type ImportPrepareResponse,
   type ImportTemplate,
   type ImportTemplateConfig,
@@ -58,8 +56,6 @@ function currentMonth(): string {
 }
 
 function Home() {
-  const [apiHealth, setApiHealth] = useState<HealthResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<CsvPreviewResponse | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -98,26 +94,6 @@ function Home() {
   const [dashboardLabels, setDashboardLabels] = useState<DashboardSpendingLabel[]>([]);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const previewRequestId = useRef(0);
-
-  useEffect(() => {
-    let active = true;
-
-    getHealth()
-      .then((health) => {
-        if (active) {
-          setApiHealth(health);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setError("API unavailable");
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   useEffect(() => {
     refreshAccounts();
@@ -387,73 +363,22 @@ function Home() {
 
   return (
     <main className="app-shell">
-      <section className="hero">
-        <p className="eyebrow">Personal Finance MVP</p>
-        <h1>Import messy CSVs into useful money data.</h1>
-        <p className="intro">
-          The foundation is running: React on Vite, FastAPI on SQLite, and Docker for local development.
-        </p>
-        <div className="status-card" aria-label="Frontend Health">
-          <span className="status-label">Frontend Health</span>
-          <span className="status-value ok">ready</span>
-          <span className="status-label">Backend Health</span>
-          <span className={error ? "status-value error" : "status-value ok"}>
-            {error ?? apiHealth?.status ?? "checking"}
-          </span>
+      <header className="hero">
+        <div>
+          <p className="eyebrow">Personal Finance MVP</p>
+          <h1>Review monthly transactions with focused workflows.</h1>
+          <p className="intro">Use dedicated modules for dashboard review, imports, labeling, and account management.</p>
         </div>
-      </section>
-      <section className="account-panel" aria-labelledby="accounts-heading">
-        <p className="eyebrow">Accounts</p>
-        <h2 id="accounts-heading">Manage import accounts.</h2>
-        <form className="account-create-form" onSubmit={handleCreateAccount}>
-          <label>
-            <span>New account name</span>
-            <input value={newAccountName} onChange={(event) => setNewAccountName(event.target.value)} placeholder="Everyday checking" />
-          </label>
-          <button type="submit">Create Account</button>
-        </form>
-        {accountError ? <p className="preview-error">{accountError}</p> : null}
-        {accountStatus ? <p className="template-status">{accountStatus}</p> : null}
-        <div className="account-list" aria-label="Accounts">
-          {accounts.length === 0 ? <p>No accounts yet. Create one before importing transactions.</p> : null}
-          {accounts.map((account) => (
-            <article key={account.id}>
-              <div>
-                <strong>{account.name}</strong>
-                <span>{account.transaction_count} transaction(s)</span>
-              </div>
-              {renamingAccountId === account.id ? (
-                <label>
-                  <span>Rename account</span>
-                  <input value={renamingAccountName} onChange={(event) => setRenamingAccountName(event.target.value)} />
-                </label>
-              ) : null}
-              <div className="account-actions">
-                {renamingAccountId === account.id ? (
-                  <button type="button" onClick={() => handleRenameAccount(account.id)}>Save Rename</button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRenamingAccountId(account.id);
-                      setRenamingAccountName(account.name);
-                    }}
-                  >
-                    Rename
-                  </button>
-                )}
-                <button type="button" onClick={() => handleDeleteAccount(account)}>Delete</button>
-                {confirmingDeleteAccountId === account.id ? (
-                  <button type="button" onClick={() => handleDeleteAccount(account, true)}>
-                    Confirm Delete
-                  </button>
-                ) : null}
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-      <section className="dashboard-panel" aria-labelledby="dashboard-heading">
+        <nav className="app-nav" aria-label="Primary app modules">
+          <NavLink to="/" end>Dashboard</NavLink>
+          <NavLink to="/import">Import</NavLink>
+          <NavLink to="/labeling">Labeling</NavLink>
+          <NavLink to="/accounts">Accounts</NavLink>
+        </nav>
+      </header>
+      <Routes>
+        <Route path="/" element={(
+          <section className="dashboard-panel" aria-labelledby="dashboard-heading">
         <div className="dashboard-header">
           <div>
             <p className="eyebrow">Finance Dashboard</p>
@@ -513,7 +438,62 @@ function Home() {
           </div>
         )}
       </section>
-      <section className="upload-panel" aria-labelledby="upload-heading">
+        )} />
+        <Route path="/accounts" element={(
+          <section className="account-panel" aria-labelledby="accounts-heading">
+        <p className="eyebrow">Accounts</p>
+        <h2 id="accounts-heading">Manage import accounts.</h2>
+        <form className="account-create-form" onSubmit={handleCreateAccount}>
+          <label>
+            <span>New account name</span>
+            <input value={newAccountName} onChange={(event) => setNewAccountName(event.target.value)} placeholder="Everyday checking" />
+          </label>
+          <button type="submit">Create Account</button>
+        </form>
+        {accountError ? <p className="preview-error">{accountError}</p> : null}
+        {accountStatus ? <p className="template-status">{accountStatus}</p> : null}
+        <div className="account-list" aria-label="Accounts">
+          {accounts.length === 0 ? <p>No accounts yet. Create one before importing transactions.</p> : null}
+          {accounts.map((account) => (
+            <article key={account.id}>
+              <div>
+                <strong>{account.name}</strong>
+                <span>{account.transaction_count} transaction(s)</span>
+              </div>
+              {renamingAccountId === account.id ? (
+                <label>
+                  <span>Rename account</span>
+                  <input value={renamingAccountName} onChange={(event) => setRenamingAccountName(event.target.value)} />
+                </label>
+              ) : null}
+              <div className="account-actions">
+                {renamingAccountId === account.id ? (
+                  <button type="button" onClick={() => handleRenameAccount(account.id)}>Save Rename</button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRenamingAccountId(account.id);
+                      setRenamingAccountName(account.name);
+                    }}
+                  >
+                    Rename
+                  </button>
+                )}
+                <button type="button" onClick={() => handleDeleteAccount(account)}>Delete</button>
+                {confirmingDeleteAccountId === account.id ? (
+                  <button type="button" onClick={() => handleDeleteAccount(account, true)}>
+                    Confirm Delete
+                  </button>
+                ) : null}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+        )} />
+        <Route path="/import" element={(
+          <section className="upload-panel" aria-labelledby="upload-heading">
         <p className="eyebrow">CSV Upload Preview</p>
         <h2 id="upload-heading">Preview source rows before mapping.</h2>
         <form className="upload-form" onSubmit={handlePreviewSubmit}>
@@ -783,7 +763,9 @@ function Home() {
           </div>
         ) : null}
       </section>
-      <section className="label-panel" aria-labelledby="label-heading">
+        )} />
+        <Route path="/labeling" element={(
+          <section className="label-panel" aria-labelledby="label-heading">
         <p className="eyebrow">Transaction Labeling</p>
         <h2 id="label-heading">Save reusable match rules.</h2>
         <p className="label-intro">
@@ -835,15 +817,13 @@ function Home() {
           ))}
         </div>
       </section>
+        )} />
+        <Route path="*" element={<Link to="/">Back to dashboard</Link>} />
+      </Routes>
     </main>
   );
 }
 
 export default function App() {
-  return (
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="*" element={<Link to="/">Back to dashboard</Link>} />
-    </Routes>
-  );
+  return <Home />;
 }

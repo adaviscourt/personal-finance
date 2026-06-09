@@ -95,6 +95,28 @@ h3 {
   line-height: 1.7;
 }
 
+.app-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.app-nav a {
+  padding: 10px 14px;
+  border: 1px solid #d0dae8;
+  border-radius: 999px;
+  background: white;
+  color: #344055;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.app-nav a[aria-current="page"] {
+  border-color: #426b35;
+  background: #426b35;
+  color: white;
+}
+
 .status-card {
   display: inline-grid;
   gap: 8px;

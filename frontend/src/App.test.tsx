@@ -10,7 +10,6 @@ import {
   createImportTemplate,
   deleteAccount,
   getDashboardSpendingByLabel,
-  getHealth,
   listAccounts,
   listLabelRules,
   listLabels,
@@ -28,7 +27,6 @@ vi.mock("./api/client", () => ({
   createImportTemplate: vi.fn(),
   deleteAccount: vi.fn(),
   getDashboardSpendingByLabel: vi.fn(),
-  getHealth: vi.fn(),
   listAccounts: vi.fn(),
   listLabelRules: vi.fn(),
   listLabels: vi.fn(),
@@ -45,7 +43,6 @@ const mockedCreateLabelRule = vi.mocked(createLabelRule);
 const mockedCreateImportTemplate = vi.mocked(createImportTemplate);
 const mockedDeleteAccount = vi.mocked(deleteAccount);
 const mockedGetDashboardSpendingByLabel = vi.mocked(getDashboardSpendingByLabel);
-const mockedGetHealth = vi.mocked(getHealth);
 const mockedListAccounts = vi.mocked(listAccounts);
 const mockedListLabelRules = vi.mocked(listLabelRules);
 const mockedListLabels = vi.mocked(listLabels);
@@ -55,13 +52,20 @@ const mockedPrepareImport = vi.mocked(prepareImport);
 const mockedRenameAccount = vi.mocked(renameAccount);
 const mockedUpdateImportTemplate = vi.mocked(updateImportTemplate);
 
+function renderApp(route = "/") {
+  return render(
+    <MemoryRouter initialEntries={[route]}>
+      <App />
+    </MemoryRouter>,
+  );
+}
+
 describe("App", () => {
   afterEach(() => {
     cleanup();
   });
 
   beforeEach(() => {
-    mockedGetHealth.mockResolvedValue({ status: "ok", database: "ok" });
     mockedListLabels.mockResolvedValue([
       { id: 1, slug: "uncategorized", name: "Uncategorized" },
       { id: 2, slug: "dining", name: "Dining" },
@@ -99,15 +103,27 @@ describe("App", () => {
     mockedGetDashboardSpendingByLabel.mockResolvedValue({ month: "2026-01", labels: [] });
   });
 
-  it("renders the frontend health content", () => {
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
+  it("renders primary module navigation and a dashboard-only home route", async () => {
+    renderApp();
 
-    expect(screen.getByText("Frontend Health")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Import" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Labeling" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Accounts" })).toBeInTheDocument();
+    expect(screen.queryByText("Frontend Health")).not.toBeInTheDocument();
+    expect(screen.queryByText("Backend Health")).not.toBeInTheDocument();
     expect(screen.getByText("Personal Finance MVP")).toBeInTheDocument();
+    expect(await screen.findByText("Monthly spending by label.")).toBeInTheDocument();
+    expect(screen.queryByText("Preview source rows before mapping.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Save reusable match rules.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Manage import accounts.")).not.toBeInTheDocument();
+  });
+
+  it("marks non-dashboard modules as current", () => {
+    renderApp("/import");
+
+    expect(screen.getByRole("link", { name: "Import" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByText("Preview source rows before mapping.")).toBeInTheDocument();
   });
 
   it("uploads a CSV and renders source columns with raw preview rows", async () => {
@@ -117,11 +133,7 @@ describe("App", () => {
       rows: [{ Date: "2026-01-01", Description: "Coffee", Amount: "-4.50" }],
     });
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp("/import");
 
     const input = screen.getByLabelText("Statement CSV") as HTMLInputElement;
     const file = new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv", {
@@ -145,11 +157,7 @@ describe("App", () => {
       ],
     });
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp();
 
     expect(await screen.findByText("Monthly spending by label.")).toBeInTheDocument();
     expect(await screen.findByText("Groceries")).toBeInTheDocument();
@@ -164,11 +172,7 @@ describe("App", () => {
       .mockResolvedValueOnce({ month: "2026-01", labels: [{ label_slug: "dining", label_name: "Dining", amount: "8.00" }] })
       .mockResolvedValueOnce({ month: "2026-02", labels: [] });
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp();
 
     expect(await screen.findByText("Total debit spending: $8.00")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Dashboard month"), { target: { value: "2026-02" } });
@@ -178,11 +182,7 @@ describe("App", () => {
   });
 
   it("filters dashboard spending by selected accounts", async () => {
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp();
 
     expect((await screen.findAllByText("Travel Card")).length).toBeGreaterThan(0);
     const accountFilter = screen.getByRole("listbox") as HTMLSelectElement;
@@ -203,11 +203,7 @@ describe("App", () => {
     });
     mockedDeleteAccount.mockResolvedValueOnce({ id: 42, transaction_count: 2, requires_confirmation: true }).mockResolvedValueOnce(null);
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp("/accounts");
 
     expect(await screen.findByText("Manage import accounts.")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("New account name"), { target: { value: "Savings" } });
@@ -250,11 +246,7 @@ describe("App", () => {
       },
     });
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp("/import");
 
     const file = new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv", {
       type: "text/csv",
@@ -323,11 +315,7 @@ describe("App", () => {
       },
     });
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp("/import");
 
     fireEvent.change(screen.getByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv")] },
@@ -368,11 +356,7 @@ describe("App", () => {
       applied_count: 2,
     });
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp("/labeling");
 
     expect(await screen.findByText("Transaction Labeling")).toBeInTheDocument();
     expect(screen.getByText('description contains "Cafe"')).toBeInTheDocument();
@@ -401,11 +385,7 @@ describe("App", () => {
     });
     mockedConfirmImport.mockResolvedValue({ upload_file_id: 22, inserted_count: 1, duplicate_candidates: [] });
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp("/import");
 
     const file = new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv", {
       type: "text/csv",
