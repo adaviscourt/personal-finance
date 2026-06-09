@@ -217,7 +217,8 @@ select[multiple] {
   font-weight: 800;
 }
 
-.account-filter {
+.account-filter,
+.label-filter {
   display: grid;
   gap: 7px;
   min-width: 220px;
@@ -227,6 +228,66 @@ select[multiple] {
 
 .account-filter small {
   color: #596473;
+}
+
+.dashboard-transactions {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.dashboard-table-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dashboard-table-header h3 {
+  margin: 0;
+}
+
+.dashboard-table-header span {
+  color: #596473;
+  font-weight: 800;
+}
+
+.dashboard-table-wrap {
+  max-height: 520px;
+}
+
+.transaction-table {
+  min-width: 760px;
+}
+
+.transaction-table td strong,
+.transaction-table td span {
+  display: block;
+}
+
+.transaction-table td span {
+  margin-top: 4px;
+  color: #596473;
+  font-size: 0.9rem;
+}
+
+.direction-credit {
+  color: #2f6d30;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.direction-debit {
+  color: #7b3f22;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.amount-cell {
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  text-align: right;
 }
 
 .dashboard-grid {
@@ -589,5 +650,13 @@ td {
   .dashboard-grid,
   .label-rule-form {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-header label {
+    width: 100%;
+  }
+
+  .transaction-table {
+    min-width: 680px;
   }
 }

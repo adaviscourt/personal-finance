@@ -10,6 +10,7 @@ import {
   createImportTemplate,
   deleteAccount,
   getDashboardSpendingByLabel,
+  getDashboardTransactions,
   listAccounts,
   listLabelRules,
   listLabels,
@@ -22,6 +23,7 @@ import {
   type ConfirmImportResponse,
   type CsvPreviewResponse,
   type DashboardSpendingLabel,
+  type DashboardTransactionRow,
   type ImportPrepareResponse,
   type ImportTemplate,
   type ImportTemplateConfig,
@@ -91,7 +93,10 @@ function Home() {
   const [labelRuleSaving, setLabelRuleSaving] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [dashboardAccountIds, setDashboardAccountIds] = useState<number[]>([]);
+  const [dashboardLabelSlug, setDashboardLabelSlug] = useState("");
   const [dashboardLabels, setDashboardLabels] = useState<DashboardSpendingLabel[]>([]);
+  const [dashboardTransactions, setDashboardTransactions] = useState<DashboardTransactionRow[]>([]);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const previewRequestId = useRef(0);
 
@@ -122,26 +127,43 @@ function Home() {
   useEffect(() => {
     let active = true;
     setDashboardError(null);
+    setDashboardLoading(true);
 
-    getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds)
-      .then((dashboard) => {
+    Promise.all([
+      getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds),
+      getDashboardTransactions(selectedMonth, {
+        accountIds: dashboardAccountIds,
+        labelSlugs: dashboardLabelSlug ? [dashboardLabelSlug] : [],
+      }),
+    ])
+      .then(([spendingDashboard, transactionDashboard]) => {
         if (active) {
-          setDashboardLabels(dashboard.labels);
+          setDashboardLabels(spendingDashboard.labels);
+          setDashboardTransactions(transactionDashboard.transactions);
         }
       })
       .catch(() => {
         if (active) {
           setDashboardLabels([]);
-          setDashboardError("Could not load dashboard spending data.");
+          setDashboardTransactions([]);
+          setDashboardError("Could not load dashboard transactions for the selected filters.");
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setDashboardLoading(false);
         }
       });
 
     return () => {
       active = false;
     };
-  }, [selectedMonth, dashboardAccountIds]);
+  }, [selectedMonth, dashboardAccountIds, dashboardLabelSlug]);
 
-  const dashboardChartData = dashboardLabels.map((label) => ({
+  const filteredDashboardLabels = dashboardLabelSlug
+    ? dashboardLabels.filter((label) => label.label_slug === dashboardLabelSlug)
+    : dashboardLabels;
+  const dashboardChartData = filteredDashboardLabels.map((label) => ({
     name: label.label_name,
     value: Number(label.amount),
     amount: label.amount,
@@ -151,12 +173,32 @@ function Home() {
 
   function refreshDashboard() {
     setDashboardError(null);
-    getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds)
-      .then((dashboard) => setDashboardLabels(dashboard.labels))
+    setDashboardLoading(true);
+    Promise.all([
+      getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds),
+      getDashboardTransactions(selectedMonth, {
+        accountIds: dashboardAccountIds,
+        labelSlugs: dashboardLabelSlug ? [dashboardLabelSlug] : [],
+      }),
+    ])
+      .then(([spendingDashboard, transactionDashboard]) => {
+        setDashboardLabels(spendingDashboard.labels);
+        setDashboardTransactions(transactionDashboard.transactions);
+      })
       .catch(() => {
         setDashboardLabels([]);
-        setDashboardError("Could not load dashboard spending data.");
+        setDashboardTransactions([]);
+        setDashboardError("Could not load dashboard transactions for the selected filters.");
+      })
+      .finally(() => {
+        setDashboardLoading(false);
       });
+  }
+
+  function formatTransactionAmount(transaction: DashboardTransactionRow): string {
+    const amount = Number(transaction.amount);
+    const sign = transaction.direction === "credit" ? "+" : "-";
+    return `${sign}$${amount.toFixed(2)}`;
   }
 
   function refreshAccounts() {
@@ -382,7 +424,7 @@ function Home() {
         <div className="dashboard-header">
           <div>
             <p className="eyebrow">Finance Dashboard</p>
-            <h2 id="dashboard-heading">Monthly spending by label.</h2>
+            <h2 id="dashboard-heading">Monthly transaction review.</h2>
           </div>
           <label className="month-picker">
             <span>Dashboard month</span>
@@ -407,13 +449,68 @@ function Home() {
             </select>
             <small>Leave blank for all accounts.</small>
           </label>
+          <label className="label-filter">
+            <span>Dashboard label</span>
+            <select
+              aria-label="Dashboard label"
+              value={dashboardLabelSlug}
+              onChange={(event) => setDashboardLabelSlug(event.target.value)}
+            >
+              <option value="">All labels</option>
+              {labels.map((label) => (
+                <option key={label.id} value={label.slug}>
+                  {label.name}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         {dashboardError ? <p className="preview-error">{dashboardError}</p> : null}
-        {dashboardLabels.length === 0 ? (
-          <div className="dashboard-empty">No spending data available for {selectedMonth} and selected accounts.</div>
+        {dashboardLoading ? (
+          <div className="dashboard-empty" role="status">Loading dashboard transactions...</div>
+        ) : dashboardTransactions.length === 0 ? (
+          <div className="dashboard-empty">No transactions available for {selectedMonth} and selected filters.</div>
         ) : (
+          <div className="dashboard-transactions">
+            <div className="dashboard-table-header">
+              <h3>Transactions</h3>
+              <span>{dashboardTransactions.length} row(s)</span>
+            </div>
+            <div className="table-wrap dashboard-table-wrap">
+              <table className="transaction-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Account</th>
+                    <th scope="col">Description</th>
+                    <th scope="col">Label</th>
+                    <th scope="col">Direction</th>
+                    <th scope="col">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dashboardTransactions.map((transaction) => (
+                    <tr key={transaction.id}>
+                      <td>{transaction.transaction_date}</td>
+                      <td>{transaction.account.name}</td>
+                      <td>
+                        <strong>{transaction.merchant || transaction.description}</strong>
+                        {transaction.merchant ? <span>{transaction.description}</span> : null}
+                      </td>
+                      <td>{transaction.label.name}</td>
+                      <td className={`direction-${transaction.direction}`}>{transaction.direction}</td>
+                      <td className="amount-cell">{formatTransactionAmount(transaction)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        {filteredDashboardLabels.length === 0 ? null : (
           <div className="dashboard-grid">
             <div className="chart-card" aria-label="Spending by label pie chart">
+              <h3>Spending summary</h3>
               <ResponsiveContainer width="100%" height={280}>
                 <PieChart>
                   <Pie data={dashboardChartData} dataKey="value" nameKey="name" innerRadius={70} outerRadius={110} paddingAngle={3}>
@@ -427,7 +524,7 @@ function Home() {
               <strong>Total debit spending: ${dashboardTotal.toFixed(2)}</strong>
             </div>
             <div className="dashboard-legend" aria-label="Spending by label totals">
-              {dashboardLabels.map((label, index) => (
+              {filteredDashboardLabels.map((label, index) => (
                 <div key={label.label_slug}>
                   <span style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} />
                   <strong>{label.label_name}</strong>

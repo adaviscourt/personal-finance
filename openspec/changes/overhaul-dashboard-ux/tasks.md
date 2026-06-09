@@ -22,11 +22,11 @@
 
 ## 4. Dashboard Experience
 
-- [ ] 4.1 Add dashboard filters for month, optional accounts, and optional label. (#30)
-- [ ] 4.2 Render dashboard transaction table with date, account, description or merchant, label, direction, and amount. (#30)
-- [ ] 4.3 Add empty, loading, and contextual API error states for dashboard data. (#30)
-- [ ] 4.4 Keep spending-by-label data only as a secondary summary if retained, not the primary dashboard content. (#30)
-- [ ] 4.5 Ensure dashboard table remains usable on narrow screens. (#30)
+- [x] 4.1 Add dashboard filters for month, optional accounts, and optional label. (#30)
+- [x] 4.2 Render dashboard transaction table with date, account, description or merchant, label, direction, and amount. (#30)
+- [x] 4.3 Add empty, loading, and contextual API error states for dashboard data. (#30)
+- [x] 4.4 Keep spending-by-label data only as a secondary summary if retained, not the primary dashboard content. (#30)
+- [x] 4.5 Ensure dashboard table remains usable on narrow screens. (#30)
 
 ## 5. Guided Import And Module Handoff
 

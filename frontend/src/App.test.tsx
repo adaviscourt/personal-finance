@@ -10,6 +10,7 @@ import {
   createImportTemplate,
   deleteAccount,
   getDashboardSpendingByLabel,
+  getDashboardTransactions,
   listAccounts,
   listLabelRules,
   listLabels,
@@ -27,6 +28,7 @@ vi.mock("./api/client", () => ({
   createImportTemplate: vi.fn(),
   deleteAccount: vi.fn(),
   getDashboardSpendingByLabel: vi.fn(),
+  getDashboardTransactions: vi.fn(),
   listAccounts: vi.fn(),
   listLabelRules: vi.fn(),
   listLabels: vi.fn(),
@@ -43,6 +45,7 @@ const mockedCreateLabelRule = vi.mocked(createLabelRule);
 const mockedCreateImportTemplate = vi.mocked(createImportTemplate);
 const mockedDeleteAccount = vi.mocked(deleteAccount);
 const mockedGetDashboardSpendingByLabel = vi.mocked(getDashboardSpendingByLabel);
+const mockedGetDashboardTransactions = vi.mocked(getDashboardTransactions);
 const mockedListAccounts = vi.mocked(listAccounts);
 const mockedListLabelRules = vi.mocked(listLabelRules);
 const mockedListLabels = vi.mocked(listLabels);
@@ -100,7 +103,9 @@ describe("App", () => {
     mockedPrepareImport.mockReset();
     mockedRenameAccount.mockReset();
     mockedGetDashboardSpendingByLabel.mockReset();
+    mockedGetDashboardTransactions.mockReset();
     mockedGetDashboardSpendingByLabel.mockResolvedValue({ month: "2026-01", labels: [] });
+    mockedGetDashboardTransactions.mockResolvedValue({ month: "2026-01", transactions: [] });
   });
 
   it("renders primary module navigation and a dashboard-only home route", async () => {
@@ -113,7 +118,7 @@ describe("App", () => {
     expect(screen.queryByText("Frontend Health")).not.toBeInTheDocument();
     expect(screen.queryByText("Backend Health")).not.toBeInTheDocument();
     expect(screen.getByText("Personal Finance MVP")).toBeInTheDocument();
-    expect(await screen.findByText("Monthly spending by label.")).toBeInTheDocument();
+    expect(await screen.findByText("Monthly transaction review.")).toBeInTheDocument();
     expect(screen.queryByText("Preview source rows before mapping.")).not.toBeInTheDocument();
     expect(screen.queryByText("Save reusable match rules.")).not.toBeInTheDocument();
     expect(screen.queryByText("Manage import accounts.")).not.toBeInTheDocument();
@@ -148,7 +153,7 @@ describe("App", () => {
     expect(mockedPreviewCsv).toHaveBeenCalledWith(file);
   });
 
-  it("loads dashboard spending for the selected month and renders debit label totals", async () => {
+  it("loads dashboard transactions and keeps spending summary secondary", async () => {
     mockedGetDashboardSpendingByLabel.mockResolvedValue({
       month: "2026-01",
       labels: [
@@ -156,40 +161,112 @@ describe("App", () => {
         { label_slug: "dining", label_name: "Dining", amount: "8.00" },
       ],
     });
+    mockedGetDashboardTransactions.mockResolvedValue({
+      month: "2026-01",
+      transactions: [
+        {
+          id: 10,
+          transaction_date: "2026-01-03",
+          account: { id: 42, name: "Travel Card" },
+          description: "Local Market weekly groceries",
+          merchant: "Local Market",
+          label: { id: 3, slug: "groceries", name: "Groceries" },
+          direction: "debit",
+          amount: "25.25",
+          source_type: null,
+          source_category: null,
+          check_number: null,
+        },
+      ],
+    });
 
     renderApp();
 
-    expect(await screen.findByText("Monthly spending by label.")).toBeInTheDocument();
-    expect(await screen.findByText("Groceries")).toBeInTheDocument();
+    expect(await screen.findByText("Monthly transaction review.")).toBeInTheDocument();
+    expect(await screen.findByText("Local Market")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Date" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Account" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Description" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Label" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Direction" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Amount" })).toBeInTheDocument();
+    expect((await screen.findAllByText("Groceries")).length).toBeGreaterThan(0);
     expect(screen.getByText("$25.25")).toBeInTheDocument();
     expect(screen.getByText("Total debit spending: $33.25")).toBeInTheDocument();
     expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), []);
+    expect(mockedGetDashboardTransactions).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), {
+      accountIds: [],
+      labelSlugs: [],
+    });
   });
 
-  it("updates dashboard data when month changes and shows empty spending state", async () => {
+  it("updates dashboard data when month changes and shows empty transaction state", async () => {
     mockedGetDashboardSpendingByLabel
       .mockResolvedValueOnce({ month: "2026-01", labels: [{ label_slug: "dining", label_name: "Dining", amount: "8.00" }] })
       .mockResolvedValueOnce({ month: "2026-01", labels: [{ label_slug: "dining", label_name: "Dining", amount: "8.00" }] })
       .mockResolvedValueOnce({ month: "2026-02", labels: [] });
+    mockedGetDashboardTransactions
+      .mockResolvedValueOnce({ month: "2026-01", transactions: [{
+        id: 8,
+        transaction_date: "2026-01-04",
+        account: { id: 1, name: "Default Account" },
+        description: "Cafe",
+        merchant: null,
+        label: { id: 2, slug: "dining", name: "Dining" },
+        direction: "debit",
+        amount: "8.00",
+        source_type: null,
+        source_category: null,
+        check_number: null,
+      }] })
+      .mockResolvedValueOnce({ month: "2026-01", transactions: [{
+        id: 8,
+        transaction_date: "2026-01-04",
+        account: { id: 1, name: "Default Account" },
+        description: "Cafe",
+        merchant: null,
+        label: { id: 2, slug: "dining", name: "Dining" },
+        direction: "debit",
+        amount: "8.00",
+        source_type: null,
+        source_category: null,
+        check_number: null,
+      }] })
+      .mockResolvedValueOnce({ month: "2026-02", transactions: [] });
 
     renderApp();
 
-    expect(await screen.findByText("Total debit spending: $8.00")).toBeInTheDocument();
+    expect(await screen.findByText("Cafe")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Dashboard month"), { target: { value: "2026-02" } });
 
-    expect(await screen.findByText("No spending data available for 2026-02 and selected accounts.")).toBeInTheDocument();
+    expect(await screen.findByText("No transactions available for 2026-02 and selected filters.")).toBeInTheDocument();
     expect(mockedGetDashboardSpendingByLabel).toHaveBeenLastCalledWith("2026-02", []);
+    expect(mockedGetDashboardTransactions).toHaveBeenLastCalledWith("2026-02", { accountIds: [], labelSlugs: [] });
   });
 
-  it("filters dashboard spending by selected accounts", async () => {
+  it("filters dashboard transactions by selected accounts and label", async () => {
     renderApp();
 
     expect((await screen.findAllByText("Travel Card")).length).toBeGreaterThan(0);
-    const accountFilter = screen.getByRole("listbox") as HTMLSelectElement;
+    const accountFilter = screen.getByRole("listbox", { name: "Dashboard accounts" }) as HTMLSelectElement;
     accountFilter.options[1].selected = true;
     fireEvent.change(accountFilter);
+    fireEvent.change(screen.getByLabelText("Dashboard label"), { target: { value: "dining" } });
 
     expect(mockedGetDashboardSpendingByLabel).toHaveBeenLastCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), [42]);
+    expect(mockedGetDashboardTransactions).toHaveBeenLastCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), {
+      accountIds: [42],
+      labelSlugs: ["dining"],
+    });
+  });
+
+  it("shows contextual dashboard loading and API error states", async () => {
+    mockedGetDashboardTransactions.mockRejectedValue(new Error("offline"));
+
+    renderApp();
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading dashboard transactions...");
+    expect(await screen.findByText("Could not load dashboard transactions for the selected filters.")).toBeInTheDocument();
   });
 
   it("creates and deletes accounts with transaction confirmation", async () => {
@@ -369,6 +446,7 @@ describe("App", () => {
     expect(await screen.findByText("Rule saved. Applied to 2 existing transactions.")).toBeInTheDocument();
     expect(mockedCreateLabelRule).toHaveBeenCalledWith({ label_id: 2, match_field: "merchant", pattern: "Bistro" });
     expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledTimes(3);
+    expect(mockedGetDashboardTransactions).toHaveBeenCalledTimes(3);
   });
 
   it("prepares and confirms an import from mapped preview rows", async () => {
