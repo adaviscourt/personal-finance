@@ -140,25 +140,36 @@ describe("App", () => {
 
     renderApp("/import");
 
-    expect(screen.getByText("1. Source file")).toBeInTheDocument();
-    expect(screen.getByText("2. Mappings")).toBeInTheDocument();
-    expect(screen.getByText("3. Transformed preview")).toBeInTheDocument();
-    expect(screen.getByText("4. Warning review")).toBeInTheDocument();
+    expect(screen.getByText("1. Account")).toBeInTheDocument();
+    expect(screen.getByText("2. Source file")).toBeInTheDocument();
+    expect(screen.getByText("3. Mappings")).toBeInTheDocument();
+    expect(screen.getByText("4. Review")).toBeInTheDocument();
     expect(screen.getByText("5. Confirm")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Import account")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
 
     expect(screen.getByText("Choose a source CSV file first.")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Statement CSV"), {
+    fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv")] },
     });
     fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
 
     expect(await screen.findByText("Before preparing")).toBeInTheDocument();
     expect(screen.getByText("Map required field(s): date, description, amount, direction.")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Active account"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Import account"), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "Prepare Import" }));
 
     expect(screen.getByText("Choose the account receiving this import before preparing import.")).toBeInTheDocument();
+  });
+
+  it("sends users to accounts before import when no accounts exist", async () => {
+    mockedListAccounts.mockResolvedValueOnce([]);
+
+    renderApp("/import");
+
+    expect(await screen.findByText("Create an account before importing")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Go to accounts" })).toHaveAttribute("href", "/accounts");
+    expect(screen.queryByLabelText("Statement CSV")).not.toBeInTheDocument();
   });
 
   it("uploads a CSV and renders source columns with raw preview rows", async () => {
@@ -170,7 +181,7 @@ describe("App", () => {
 
     renderApp("/import");
 
-    const input = screen.getByLabelText("Statement CSV") as HTMLInputElement;
+    const input = await screen.findByLabelText("Statement CSV") as HTMLInputElement;
     const file = new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv", {
       type: "text/csv",
     });
@@ -335,7 +346,7 @@ describe("App", () => {
     mockedCreateImportTemplate.mockResolvedValue({
       id: 10,
       name: "Checking export",
-      account_id: null,
+      account_id: 1,
       created_at: "2026-01-01T00:00:00+00:00",
       updated_at: "2026-01-01T00:00:00+00:00",
       config: {
@@ -358,7 +369,7 @@ describe("App", () => {
     const file = new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv", {
       type: "text/csv",
     });
-    fireEvent.change(screen.getByLabelText("Statement CSV"), { target: { files: [file] } });
+    fireEvent.change(await screen.findByLabelText("Statement CSV"), { target: { files: [file] } });
     fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
@@ -412,7 +423,7 @@ describe("App", () => {
 
     renderApp("/import");
 
-    fireEvent.change(screen.getByLabelText("Statement CSV"), {
+    fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv")] },
     });
     fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
@@ -474,7 +485,7 @@ describe("App", () => {
 
     renderApp("/import");
 
-    fireEvent.change(screen.getByLabelText("Statement CSV"), {
+    fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv")] },
     });
     fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
@@ -548,11 +559,11 @@ describe("App", () => {
     const file = new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv", {
       type: "text/csv",
     });
-    fireEvent.change(screen.getByLabelText("Statement CSV"), { target: { files: [file] } });
+    fireEvent.change(await screen.findByLabelText("Statement CSV"), { target: { files: [file] } });
     fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Active account"), { target: { value: "42" } });
+    fireEvent.change(screen.getByLabelText("Import account"), { target: { value: "42" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
@@ -588,11 +599,11 @@ describe("App", () => {
     const file = new File(["Date,Description,Amount\n2026-03-15,Coffee,-4.50\n"], "statement.csv", {
       type: "text/csv",
     });
-    fireEvent.change(screen.getByLabelText("Statement CSV"), { target: { files: [file] } });
+    fireEvent.change(await screen.findByLabelText("Statement CSV"), { target: { files: [file] } });
     fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Active account"), { target: { value: "42" } });
+    fireEvent.change(screen.getByLabelText("Import account"), { target: { value: "42" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
@@ -631,12 +642,12 @@ describe("App", () => {
 
     renderApp("/import");
 
-    fireEvent.change(screen.getByLabelText("Statement CSV"), {
+    fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Amount\n2026-03-15,Coffee,-4.50\n"], "statement.csv")] },
     });
     fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Active account"), { target: { value: "42" } });
+    fireEvent.change(screen.getByLabelText("Import account"), { target: { value: "42" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });

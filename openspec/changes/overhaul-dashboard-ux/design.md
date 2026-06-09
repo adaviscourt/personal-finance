@@ -58,6 +58,14 @@ Rationale: The app is local-first and small. Route-level component state is simp
 
 Alternative considered: Introduce global state for accounts, labels, and filters. This may help later, but it is premature for current complexity.
 
+### Account-first import templates
+
+The import module should require account selection before CSV upload and template selection. Import templates are account-scoped, so choosing the account first makes the template dropdown predictable and avoids a separate global-template concept. If no accounts exist, the import module should send the user to the accounts module before continuing.
+
+Rationale: Templates are shaped by bank/account export formats. Showing templates before the controlling account selector makes the workflow feel broken because the dropdown changes based on a control below it.
+
+Alternative considered: Keep global templates visible for every account. This simplifies reuse but creates unclear ownership and conflicts with account-specific statement formats.
+
 ### FreeTaxUSA-inspired product visual direction
 
 Use FreeTaxUSA as a trust reference, not a marketing-page clone. Apply restrained white/near-white surfaces, green primary actions, blue secondary/trust accents, clear bordered tables, readable forms, modest radii, and plain language. Avoid pastel panel sprawl, oversized hero copy, decorative eyebrows, and visual noise.

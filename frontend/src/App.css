@@ -209,6 +209,36 @@ select:focus-visible {
   font-weight: 800;
 }
 
+.import-account-step {
+  display: grid;
+  gap: 8px;
+  max-width: 360px;
+  margin: 0 0 18px;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.import-account-step small {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.import-empty {
+  display: grid;
+  gap: 12px;
+  max-width: 620px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-alt);
+}
+
+.import-empty p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 input[type="file"] {
   padding: 12px;
   border: 1px dashed #8da8bd;

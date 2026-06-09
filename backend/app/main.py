@@ -122,7 +122,7 @@ class ConfirmImportResponse(BaseModel):
 
 class ImportTemplatePayload(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    account_id: int | None = None
+    account_id: int
     config: ImportTemplateConfig
 
     @field_validator("name")
@@ -330,7 +330,7 @@ def serialize_dashboard_transaction(
 
 
 def validate_template_account(session: Session, account_id: int | None) -> None:
-    if account_id is not None and session.get(Account, account_id) is None:
+    if account_id is None or session.get(Account, account_id) is None:
         raise HTTPException(status_code=404, detail="Account not found.")
 
 
@@ -974,9 +974,7 @@ def create_import_template(payload: ImportTemplatePayload) -> ImportTemplateResp
 def list_import_templates(account_id: int | None = None) -> list[ImportTemplateResponse]:
     statement = select(ImportTemplate).order_by(ImportTemplate.name)
     if account_id is not None:
-        statement = statement.where(
-            or_(col(ImportTemplate.account_id) == account_id, col(ImportTemplate.account_id).is_(None))
-        )
+        statement = statement.where(ImportTemplate.account_id == account_id)
 
     with Session(engine) as session:
         templates = session.exec(statement).all()

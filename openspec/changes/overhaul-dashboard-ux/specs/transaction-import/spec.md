@@ -8,11 +8,19 @@ The system SHALL provide a dedicated import module for CSV upload, template sele
 - **THEN** CSV upload, import template, transformed preview, duplicate warning, and confirmation controls are available there instead of on the dashboard home page
 
 ### Requirement: Guide import workflow steps
-The system SHALL present import actions in a guided order from source file to confirmed import.
+The system SHALL present import actions in a guided order from account selection to confirmed import.
 
 #### Scenario: User starts an import
 - **WHEN** the user starts an import workflow
-- **THEN** the interface presents the flow as selecting a CSV, choosing or editing mappings, preparing a transformed preview, reviewing warnings, and confirming import
+- **THEN** the interface presents the flow as choosing an account, selecting a CSV, choosing or editing account-scoped template mappings, preparing a transformed preview, reviewing warnings, and confirming import
+
+#### Scenario: No accounts exist
+- **WHEN** the user opens the import module before any account exists
+- **THEN** the import module provides a path to the accounts module before CSV upload or template selection
+
+#### Scenario: User selects an import account
+- **WHEN** the user chooses an account at the start of import
+- **THEN** the template selector shows templates tied to that account
 
 #### Scenario: Required import inputs missing
 - **WHEN** the user attempts to prepare or confirm an import without required inputs
