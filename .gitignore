@@ -7,6 +7,7 @@ __pycache__/
 node_modules/
 dist/
 coverage/
+frontend/.pr-screenshots/
 data/
 *.sqlite
 *.sqlite3
