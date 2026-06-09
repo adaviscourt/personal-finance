@@ -36,10 +36,10 @@
 
 ## 6. Visual System
 
-- [ ] 6.1 Replace pastel hero/card styling with restrained product surfaces aligned to `PRODUCT.md`. (#31)
-- [ ] 6.2 Apply consistent buttons, inputs, selects, tables, focus states, and status messages across modules. (#31)
-- [ ] 6.3 Use FreeTaxUSA-inspired green primary actions and blue support accents with WCAG AA contrast. (#31)
-- [ ] 6.4 Remove decorative eyebrows and oversized hero heading treatment from app modules. (#31)
+- [x] 6.1 Replace pastel hero/card styling with restrained product surfaces aligned to `PRODUCT.md`. (#31)
+- [x] 6.2 Apply consistent buttons, inputs, selects, tables, focus states, and status messages across modules. (#31)
+- [x] 6.3 Use FreeTaxUSA-inspired green primary actions and blue support accents with WCAG AA contrast. (#31)
+- [x] 6.4 Remove decorative eyebrows and oversized hero heading treatment from app modules. (#31)
 
 ## 7. Verification
 

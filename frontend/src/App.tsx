@@ -429,9 +429,9 @@ function Home() {
     <main className="app-shell">
       <header className="hero">
         <div>
-          <p className="eyebrow">Personal Finance MVP</p>
-          <h1>Review monthly transactions with focused workflows.</h1>
-          <p className="intro">Use dedicated modules for dashboard review, imports, labeling, and account management.</p>
+          <p className="app-title">Personal Finance</p>
+          <h1>Review monthly transactions</h1>
+          <p className="intro">Move between dashboard review, imports, labeling, and account management without crowding one page.</p>
         </div>
         <nav className="app-nav" aria-label="Primary app modules">
           <NavLink to="/" end>Dashboard</NavLink>
@@ -445,8 +445,7 @@ function Home() {
           <section className="dashboard-panel" aria-labelledby="dashboard-heading">
         <div className="dashboard-header">
           <div>
-            <p className="eyebrow">Finance Dashboard</p>
-            <h2 id="dashboard-heading">Monthly transaction review.</h2>
+            <h2 id="dashboard-heading">Monthly transaction review</h2>
           </div>
           <label className="month-picker">
             <span>Dashboard month</span>
@@ -560,8 +559,7 @@ function Home() {
         )} />
         <Route path="/accounts" element={(
           <section className="account-panel" aria-labelledby="accounts-heading">
-        <p className="eyebrow">Accounts</p>
-        <h2 id="accounts-heading">Manage import accounts.</h2>
+        <h2 id="accounts-heading">Manage import accounts</h2>
         <form className="account-create-form" onSubmit={handleCreateAccount}>
           <label>
             <span>New account name</span>
@@ -613,8 +611,7 @@ function Home() {
         )} />
         <Route path="/import" element={(
           <section className="upload-panel" aria-labelledby="upload-heading">
-        <p className="eyebrow">CSV Import</p>
-        <h2 id="upload-heading">Import transactions in guided order.</h2>
+        <h2 id="upload-heading">Import transactions in guided order</h2>
         <ol className="workflow-steps" aria-label="Import workflow order">
           <li><strong>1. Source file</strong><span>Select and preview the CSV rows.</span></li>
           <li><strong>2. Mappings</strong><span>Choose or edit required field mappings.</span></li>
@@ -919,8 +916,7 @@ function Home() {
         )} />
         <Route path="/labeling" element={(
           <section className="label-panel" aria-labelledby="label-heading">
-        <p className="eyebrow">Transaction Labeling</p>
-        <h2 id="label-heading">Save reusable match rules.</h2>
+        <h2 id="label-heading">Transaction labeling rules</h2>
         <p className="label-intro">
           Assign fixed labels by matching merchant or description text. Custom labels are not available in the MVP;
           unmatched transactions stay uncategorized.

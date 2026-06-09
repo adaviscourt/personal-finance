@@ -117,18 +117,18 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "Accounts" })).toBeInTheDocument();
     expect(screen.queryByText("Frontend Health")).not.toBeInTheDocument();
     expect(screen.queryByText("Backend Health")).not.toBeInTheDocument();
-    expect(screen.getByText("Personal Finance MVP")).toBeInTheDocument();
-    expect(await screen.findByText("Monthly transaction review.")).toBeInTheDocument();
-    expect(screen.queryByText("Import transactions in guided order.")).not.toBeInTheDocument();
-    expect(screen.queryByText("Save reusable match rules.")).not.toBeInTheDocument();
-    expect(screen.queryByText("Manage import accounts.")).not.toBeInTheDocument();
+    expect(screen.getByText("Personal Finance")).toBeInTheDocument();
+    expect(await screen.findByText("Monthly transaction review")).toBeInTheDocument();
+    expect(screen.queryByText("Import transactions in guided order")).not.toBeInTheDocument();
+    expect(screen.queryByText("Transaction labeling rules")).not.toBeInTheDocument();
+    expect(screen.queryByText("Manage import accounts")).not.toBeInTheDocument();
   });
 
   it("marks non-dashboard modules as current", () => {
     renderApp("/import");
 
     expect(screen.getByRole("link", { name: "Import" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByText("Import transactions in guided order.")).toBeInTheDocument();
+    expect(screen.getByText("Import transactions in guided order")).toBeInTheDocument();
   });
 
   it("presents import steps and contextual validation before preparing", async () => {
@@ -212,7 +212,7 @@ describe("App", () => {
 
     renderApp();
 
-    expect(await screen.findByText("Monthly transaction review.")).toBeInTheDocument();
+    expect(await screen.findByText("Monthly transaction review")).toBeInTheDocument();
     expect(await screen.findByText("Local Market")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Date" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Account" })).toBeInTheDocument();
@@ -312,7 +312,7 @@ describe("App", () => {
 
     renderApp("/accounts");
 
-    expect(await screen.findByText("Manage import accounts.")).toBeInTheDocument();
+    expect(await screen.findByText("Manage import accounts")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("New account name"), { target: { value: "Savings" } });
     fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
 
@@ -465,7 +465,7 @@ describe("App", () => {
 
     renderApp("/labeling");
 
-    expect(await screen.findByText("Transaction Labeling")).toBeInTheDocument();
+    expect(await screen.findByText("Transaction labeling rules")).toBeInTheDocument();
     expect(screen.getByText('description contains "Cafe"')).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /custom label/i })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Match field"), { target: { value: "merchant" } });
@@ -554,7 +554,7 @@ describe("App", () => {
     const reviewLink = await screen.findByRole("link", { name: "Review March 2026 imports on dashboard" });
     fireEvent.click(reviewLink);
 
-    expect(await screen.findByText("Monthly transaction review.")).toBeInTheDocument();
+    expect(await screen.findByText("Monthly transaction review")).toBeInTheDocument();
     expect(screen.getByLabelText("Dashboard month")).toHaveValue("2026-03");
     await waitFor(() => {
       expect(mockedGetDashboardTransactions).toHaveBeenLastCalledWith("2026-03", { accountIds: [42], labelSlugs: [] });
