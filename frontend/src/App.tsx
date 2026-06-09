@@ -160,7 +160,10 @@ function Home() {
     };
   }, [selectedMonth, dashboardAccountIds, dashboardLabelSlug]);
 
-  const dashboardChartData = dashboardLabels.map((label) => ({
+  const filteredDashboardLabels = dashboardLabelSlug
+    ? dashboardLabels.filter((label) => label.label_slug === dashboardLabelSlug)
+    : dashboardLabels;
+  const dashboardChartData = filteredDashboardLabels.map((label) => ({
     name: label.label_name,
     value: Number(label.amount),
     amount: label.amount,
@@ -504,7 +507,7 @@ function Home() {
             </div>
           </div>
         )}
-        {dashboardLabels.length === 0 ? null : (
+        {filteredDashboardLabels.length === 0 ? null : (
           <div className="dashboard-grid">
             <div className="chart-card" aria-label="Spending by label pie chart">
               <h3>Spending summary</h3>
@@ -521,7 +524,7 @@ function Home() {
               <strong>Total debit spending: ${dashboardTotal.toFixed(2)}</strong>
             </div>
             <div className="dashboard-legend" aria-label="Spending by label totals">
-              {dashboardLabels.map((label, index) => (
+              {filteredDashboardLabels.map((label, index) => (
                 <div key={label.label_slug}>
                   <span style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} />
                   <strong>{label.label_name}</strong>
