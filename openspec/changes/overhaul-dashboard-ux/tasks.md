@@ -34,6 +34,7 @@
 - [x] 5.2 Show contextual import validation for missing file, account, or mappings. (#28)
 - [x] 5.3 After successful import, provide a clear path to review the imported month in the dashboard. (#28)
 - [x] 5.4 Require account-scoped import templates and route users without accounts to account management.
+- [x] 5.5 Remove bootstrap default account creation so first-run import uses explicit account setup.
 
 ## 6. Visual System
 

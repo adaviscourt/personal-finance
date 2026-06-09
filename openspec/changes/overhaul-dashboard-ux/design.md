@@ -66,6 +66,14 @@ Rationale: Templates are shaped by bank/account export formats. Showing template
 
 Alternative considered: Keep global templates visible for every account. This simplifies reuse but creates unclear ownership and conflicts with account-specific statement formats.
 
+### No bootstrap default account
+
+Clean databases should start with no accounts instead of seeding `Default Account`. First-run import now has an explicit no-account state that sends users to account management, which is clearer than silently creating a generic account that users may not understand.
+
+Rationale: Account-scoped templates and account-first import make the account an intentional user choice. A synthetic account can hide setup, pollute filters, and create template ownership confusion.
+
+Migration: Do not auto-delete existing `Default Account` rows. Existing rows remain ordinary accounts and can be deleted by the user.
+
 ### FreeTaxUSA-inspired product visual direction
 
 Use FreeTaxUSA as a trust reference, not a marketing-page clone. Apply restrained white/near-white surfaces, green primary actions, blue secondary/trust accents, clear bordered tables, readable forms, modest radii, and plain language. Avoid pastel panel sprawl, oversized hero copy, decorative eyebrows, and visual noise.

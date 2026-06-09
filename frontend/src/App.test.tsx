@@ -77,7 +77,7 @@ describe("App", () => {
     mockedListAccounts.mockResolvedValue([
       {
         id: 1,
-        name: "Default Account",
+        name: "Checking Account",
         institution: "Manual import",
         account_type: "checking",
         created_at: "2026-01-01T00:00:00+00:00",
@@ -250,7 +250,7 @@ describe("App", () => {
       .mockResolvedValueOnce({ month: "2026-01", transactions: [{
         id: 8,
         transaction_date: "2026-01-04",
-        account: { id: 1, name: "Default Account" },
+        account: { id: 1, name: "Checking Account" },
         description: "Cafe",
         merchant: null,
         label: { id: 2, slug: "dining", name: "Dining" },
@@ -263,7 +263,7 @@ describe("App", () => {
       .mockResolvedValueOnce({ month: "2026-01", transactions: [{
         id: 8,
         transaction_date: "2026-01-04",
-        account: { id: 1, name: "Default Account" },
+        account: { id: 1, name: "Checking Account" },
         description: "Cafe",
         merchant: null,
         label: { id: 2, slug: "dining", name: "Dining" },
