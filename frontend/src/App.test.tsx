@@ -383,6 +383,56 @@ describe("App", () => {
     });
   });
 
+  it("keeps a newly saved template when an older template load resolves later", async () => {
+    let resolveTemplateLoad: (templates: Awaited<ReturnType<typeof listImportTemplates>>) => void = () => {};
+    const staleTemplateLoad = new Promise<Awaited<ReturnType<typeof listImportTemplates>>>((resolve) => {
+      resolveTemplateLoad = resolve;
+    });
+    mockedListImportTemplates.mockReturnValueOnce(staleTemplateLoad);
+    mockedPreviewCsv.mockResolvedValue({
+      headers: ["Date", "Description", "Amount"],
+      source_columns: ["Date", "Description", "Amount"],
+      rows: [{ Date: "2026-01-01", Description: "Coffee", Amount: "-4.50" }],
+    });
+    mockedCreateImportTemplate.mockResolvedValue({
+      id: 10,
+      name: "Checking export",
+      account_id: 1,
+      created_at: "2026-01-01T00:00:00+00:00",
+      updated_at: "2026-01-01T00:00:00+00:00",
+      config: {
+        mappings: {
+          date: { source_column: "Date", transform: "parse_date" },
+          description: { source_column: "Description", transform: "copy_column" },
+          amount: { source_column: "Amount", transform: "absolute_numeric" },
+          direction: { source_column: "Amount", transform: "signed_amount_direction" },
+        },
+      },
+    });
+
+    renderApp("/import");
+
+    fireEvent.change(screen.getByLabelText("Statement CSV"), {
+      target: { files: [new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv")] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+    expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Checking export" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
+    fireEvent.change(screen.getAllByLabelText("Source column")[3], { target: { value: "Amount" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Template" }));
+
+    expect(await screen.findByText("Template saved for future imports.")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Checking export" })).toBeInTheDocument();
+    resolveTemplateLoad([]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Checking export" })).toBeInTheDocument();
+    });
+  });
+
   it("preserves account association when updating a selected template", async () => {
     mockedListImportTemplates.mockResolvedValue([
       {

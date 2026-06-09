@@ -114,6 +114,7 @@ function Home() {
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const previewRequestId = useRef(0);
+  const templateRequestId = useRef(0);
 
   useEffect(() => {
     refreshAccounts();
@@ -121,12 +122,25 @@ function Home() {
 
   useEffect(() => {
     if (activeAccountId === "") {
+      templateRequestId.current += 1;
       setTemplates([]);
       return;
     }
+
+    const requestId = templateRequestId.current + 1;
+    templateRequestId.current = requestId;
+    setTemplateError(null);
     listImportTemplates(activeAccountId)
-      .then(setTemplates)
-      .catch(() => setTemplateError("Could not load import templates."));
+      .then((nextTemplates) => {
+        if (requestId === templateRequestId.current) {
+          setTemplates(nextTemplates);
+        }
+      })
+      .catch(() => {
+        if (requestId === templateRequestId.current) {
+          setTemplateError("Could not load import templates.");
+        }
+      });
   }, [activeAccountId]);
 
   useEffect(() => {
@@ -341,6 +355,8 @@ function Home() {
     }
 
     setTemplateSaving(true);
+    const saveRequestId = templateRequestId.current + 1;
+    templateRequestId.current = saveRequestId;
     try {
       const selectedTemplate =
         selectedTemplateId === "new"
@@ -351,12 +367,14 @@ function Home() {
         selectedTemplateId === "new"
           ? await createImportTemplate(payload)
           : await updateImportTemplate(selectedTemplateId, payload);
-      setTemplates((currentTemplates) => {
-        const withoutSaved = currentTemplates.filter((template) => template.id !== savedTemplate.id);
-        return [...withoutSaved, savedTemplate].sort((first, second) => first.name.localeCompare(second.name));
-      });
-      setSelectedTemplateId(savedTemplate.id);
-      setTemplateStatus("Template saved for future imports.");
+      if (saveRequestId === templateRequestId.current) {
+        setTemplates((currentTemplates) => {
+          const withoutSaved = currentTemplates.filter((template) => template.id !== savedTemplate.id);
+          return [...withoutSaved, savedTemplate].sort((first, second) => first.name.localeCompare(second.name));
+        });
+        setSelectedTemplateId(savedTemplate.id);
+        setTemplateStatus("Template saved for future imports.");
+      }
     } catch {
       setTemplateError("Could not save that template. Check required mappings and transform settings.");
     } finally {
