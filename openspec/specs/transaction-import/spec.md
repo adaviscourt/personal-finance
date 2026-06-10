@@ -1,8 +1,34 @@
 ## Purpose
 
-Defines confirmed transaction import behavior and source context retention.
+Defines dedicated transaction import workflow behavior, confirmed imports, and source context retention.
 
 ## Requirements
+
+### Requirement: Provide dedicated import module
+The system SHALL provide a dedicated import module for CSV upload, template selection or editing, transformed preview, duplicate warning review, and import confirmation.
+
+#### Scenario: User opens import module
+- **WHEN** the user opens the import module
+- **THEN** CSV upload, import template, transformed preview, duplicate warning, and confirmation controls are available there instead of on the dashboard home page
+
+### Requirement: Guide import workflow steps
+The system SHALL present import actions in a guided order from account selection to confirmed import.
+
+#### Scenario: User starts an import
+- **WHEN** the user starts an import workflow
+- **THEN** the interface presents the flow as choosing an account, selecting a CSV, choosing or editing account-scoped template mappings, preparing a transformed preview, reviewing warnings, and confirming import
+
+#### Scenario: No accounts exist
+- **WHEN** the user opens the import module before any account exists
+- **THEN** the import module provides a path to the accounts module before CSV upload or template selection
+
+#### Scenario: User selects an import account
+- **WHEN** the user chooses an account at the start of import
+- **THEN** the template selector shows templates tied to that account
+
+#### Scenario: Required import inputs missing
+- **WHEN** the user attempts to prepare or confirm an import without required inputs
+- **THEN** the import module shows contextual validation for the missing file, account, or mapping information
 
 ### Requirement: Confirm normalized transaction import
 The system SHALL import normalized transactions only after the user confirms the transformed preview.
@@ -53,3 +79,10 @@ The system SHALL require users to select an existing active account when prepari
 #### Scenario: Missing import account rejected
 - **WHEN** the user attempts to prepare an import without selecting an existing account
 - **THEN** the system rejects the import preparation and does not store uploaded rows
+
+### Requirement: Link import completion back to dashboard review
+The system SHALL provide a clear path from a completed import to dashboard transaction review.
+
+#### Scenario: Import completes
+- **WHEN** the user confirms an import successfully
+- **THEN** the import module communicates the inserted transaction count and provides a way to review the imported month in the dashboard

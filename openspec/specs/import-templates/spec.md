@@ -1,6 +1,6 @@
 ## Purpose
 
-Defines import template creation, selection, editing, validation, and account association behavior.
+Defines import template creation, selection, editing, validation, and required account association behavior.
 
 ## Requirements
 
@@ -32,24 +32,24 @@ The system SHALL validate import templates before saving or applying them.
 - **WHEN** the user attempts to save or apply a template without required transaction mappings
 - **THEN** the system rejects the template and identifies the missing required fields
 
-### Requirement: Associate template with account optionally
-The system SHALL support templates that are globally reusable and SHALL allow templates to be associated with the active selected account for convenience.
+### Requirement: Associate template with account
+The system SHALL require every import template to be associated with an account.
 
-#### Scenario: Global template reused
-- **WHEN** the user selects a template that is not tied to a specific account
-- **THEN** the system allows the template to be applied to the uploaded CSV for the active selected account
+#### Scenario: Account template saved
+- **WHEN** the user saves a template after choosing an import account
+- **THEN** the system associates the template with that selected account
 
-#### Scenario: Active account template saved
-- **WHEN** the user saves a template while an active account is selected
-- **THEN** the system can associate the template with that selected account
+#### Scenario: Template saved without account
+- **WHEN** the user attempts to save a template without an account
+- **THEN** the system rejects the template and identifies the missing account
 
 ### Requirement: Filter templates by active account
-The system SHALL show templates that are global or associated with the active selected account during import workflows.
+The system SHALL show only templates associated with the active selected account during import workflows.
 
 #### Scenario: Active account templates listed
 - **WHEN** the user chooses an active account for imports
-- **THEN** the system lists global templates and templates associated with that account
+- **THEN** the system lists templates associated with that account
 
 #### Scenario: Other account templates hidden
 - **WHEN** the user chooses an active account for imports
-- **THEN** the system excludes templates associated only with other accounts
+- **THEN** the system excludes templates associated with other accounts
