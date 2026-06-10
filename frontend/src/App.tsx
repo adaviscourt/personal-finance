@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, NavLink, Route, Routes } from "react-router-dom";
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import {
   confirmImport,
@@ -34,13 +33,16 @@ import {
 import "./App.css";
 
 const REQUIRED_FIELDS = ["date", "description", "amount", "direction"] as const;
+const DASHBOARD_MONTH_STORAGE_KEY = "personal-finance.dashboardMonth";
+const DASHBOARD_ACCOUNT_IDS_STORAGE_KEY = "personal-finance.dashboardAccountIds";
+const DASHBOARD_LABEL_SLUG_STORAGE_KEY = "personal-finance.dashboardLabelSlug";
 const DEFAULT_TRANSFORMS: Record<(typeof REQUIRED_FIELDS)[number], TemplateTransform> = {
   date: "parse_date",
   description: "copy_column",
   amount: "absolute_numeric",
   direction: "signed_amount_direction",
 };
-const CHART_COLORS = ["#426b35", "#7b5d2a", "#5868a8", "#b55c3d", "#2f7282", "#8a4c82"];
+const CHART_COLORS = ["#0850c4", "#063d95", "#5868a8", "#7b5d2a", "#2f7282", "#8a4c82"];
 
 type MappingDraft = Record<(typeof REQUIRED_FIELDS)[number], string>;
 type TransformDraft = Record<(typeof REQUIRED_FIELDS)[number], TemplateTransform>;
@@ -55,6 +57,45 @@ function createDefaultTransforms(): TransformDraft {
 
 function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
+}
+
+function readStoredDashboardMonth(): string | null {
+  try {
+    return window.localStorage?.getItem?.(DASHBOARD_MONTH_STORAGE_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function readStoredDashboardAccountIds(): number[] {
+  try {
+    const storedIds = window.localStorage?.getItem?.(DASHBOARD_ACCOUNT_IDS_STORAGE_KEY);
+    const parsedIds: unknown = storedIds ? JSON.parse(storedIds) : [];
+    return Array.isArray(parsedIds) ? parsedIds.filter((id): id is number => Number.isInteger(id)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function readStoredDashboardLabelSlug(): string {
+  try {
+    return window.localStorage?.getItem?.(DASHBOARD_LABEL_SLUG_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStoredValue(key: string, value: string) {
+  try {
+    window.localStorage?.setItem?.(key, value);
+  } catch {
+    // Storage can be unavailable in private mode or test environments.
+  }
+}
+
+function initialDashboardMonth(): string {
+  const storedMonth = readStoredDashboardMonth();
+  return storedMonth && /^\d{4}-\d{2}$/.test(storedMonth) ? storedMonth : currentMonth();
 }
 
 function importReviewMonth(preparedImport: ImportPrepareResponse | null): string | null {
@@ -107,9 +148,9 @@ function Home() {
   const [labelRuleStatus, setLabelRuleStatus] = useState<string | null>(null);
   const [labelRuleError, setLabelRuleError] = useState<string | null>(null);
   const [labelRuleSaving, setLabelRuleSaving] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
-  const [dashboardAccountIds, setDashboardAccountIds] = useState<number[]>([]);
-  const [dashboardLabelSlug, setDashboardLabelSlug] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState(initialDashboardMonth);
+  const [dashboardAccountIds, setDashboardAccountIds] = useState<number[]>(readStoredDashboardAccountIds);
+  const [dashboardLabelSlug, setDashboardLabelSlug] = useState(readStoredDashboardLabelSlug);
   const [dashboardLabels, setDashboardLabels] = useState<DashboardSpendingLabel[]>([]);
   const [dashboardTransactions, setDashboardTransactions] = useState<DashboardTransactionRow[]>([]);
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -161,6 +202,10 @@ function Home() {
   }, []);
 
   useEffect(() => {
+    writeStoredValue(DASHBOARD_MONTH_STORAGE_KEY, selectedMonth);
+    writeStoredValue(DASHBOARD_ACCOUNT_IDS_STORAGE_KEY, JSON.stringify(dashboardAccountIds));
+    writeStoredValue(DASHBOARD_LABEL_SLUG_STORAGE_KEY, dashboardLabelSlug);
+
     let active = true;
     setDashboardError(null);
     setDashboardLoading(true);
@@ -205,6 +250,14 @@ function Home() {
     amount: label.amount,
   }));
   const dashboardTotal = dashboardChartData.reduce((total, item) => total + item.value, 0);
+  const dashboardMaxAmount = Math.max(...dashboardChartData.map((item) => item.value), 1);
+  const allDashboardAccountsSelected = dashboardAccountIds.length === 0 || dashboardAccountIds.length === accounts.length;
+  const dashboardAccountSummary =
+    accounts.length === 0
+      ? "No accounts"
+      : allDashboardAccountsSelected
+        ? "All accounts"
+        : `${dashboardAccountIds.length} selected`;
   const activeAccount = activeAccountId === "" ? null : accounts.find((account) => account.id === activeAccountId) ?? null;
   const missingMappingFields = REQUIRED_FIELDS.filter((field) => !mappingDraft[field]);
   const importValidationItems = [
@@ -242,6 +295,13 @@ function Home() {
     const amount = Number(transaction.amount);
     const sign = transaction.direction === "credit" ? "+" : "-";
     return `${sign}$${amount.toFixed(2)}`;
+  }
+
+  function toggleDashboardAccount(accountId: number, checked: boolean) {
+    const selectedIds = allDashboardAccountsSelected ? accounts.map((account) => account.id) : dashboardAccountIds;
+    const nextIds = checked ? [...selectedIds, accountId] : selectedIds.filter((id) => id !== accountId);
+    const uniqueIds = Array.from(new Set(nextIds));
+    setDashboardAccountIds(uniqueIds.length === accounts.length ? [] : uniqueIds);
   }
 
   function refreshAccounts() {
@@ -466,7 +526,7 @@ function Home() {
         <div>
           <p className="app-title">Personal Finance</p>
           <h1>Review monthly transactions</h1>
-          <p className="intro">Move between dashboard review, imports, labeling, and account management without crowding one page.</p>
+          <p className="intro">Start with the month, confirm what changed, then use guided modules for imports, labels, and accounts.</p>
         </div>
         <nav className="app-nav" aria-label="Primary app modules">
           <NavLink to="/" end>Dashboard</NavLink>
@@ -481,30 +541,33 @@ function Home() {
         <div className="dashboard-header">
           <div>
             <h2 id="dashboard-heading">Monthly transaction review</h2>
+            <p className="dashboard-help">Filter first, then scan transactions. Spending totals stay secondary.</p>
           </div>
           <label className="month-picker">
             <span>Dashboard month</span>
             <input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
           </label>
-          <label className="account-filter">
+          <div className="account-filter">
             <span>Dashboard accounts</span>
-            <select
-              aria-label="Dashboard accounts"
-              multiple
-              value={dashboardAccountIds.map(String)}
-              onChange={(event) => {
-                const values = Array.from(event.target.selectedOptions, (option) => Number(option.value));
-                setDashboardAccountIds(values);
-              }}
-            >
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
-            <small>Leave blank for all accounts.</small>
-          </label>
+            <details className="account-dropdown">
+              <summary aria-label="Dashboard accounts">{dashboardAccountSummary}</summary>
+              <div className="account-dropdown-menu" role="group" aria-label="Dashboard account options">
+                <button type="button" onClick={() => setDashboardAccountIds([])}>
+                  Select all accounts
+                </button>
+                {accounts.map((account) => (
+                  <label key={account.id}>
+                    <input
+                      type="checkbox"
+                      checked={allDashboardAccountsSelected || dashboardAccountIds.includes(account.id)}
+                      onChange={(event) => toggleDashboardAccount(account.id, event.target.checked)}
+                    />
+                    <span>{account.name}</span>
+                  </label>
+                ))}
+              </div>
+            </details>
+          </div>
           <label className="label-filter">
             <span>Dashboard label</span>
             <select
@@ -565,18 +628,22 @@ function Home() {
         )}
         {filteredDashboardLabels.length === 0 ? null : (
           <div className="dashboard-grid">
-            <div className="chart-card" aria-label="Spending by label pie chart">
+            <div className="chart-card" aria-label="Spending by label summary">
               <h3>Spending summary</h3>
-              <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <Pie data={dashboardChartData} dataKey="value" nameKey="name" innerRadius={70} outerRadius={110} paddingAngle={3}>
-                    {dashboardChartData.map((item, index) => (
-                      <Cell key={item.name} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => `$${Number(value).toFixed(2)}`} />
-                </PieChart>
-              </ResponsiveContainer>
+              <div className="spending-bars">
+                {dashboardChartData.map((item, index) => (
+                  <div key={item.name}>
+                    <span>{item.name}</span>
+                    <i
+                      aria-hidden="true"
+                      style={{
+                        background: CHART_COLORS[index % CHART_COLORS.length],
+                        inlineSize: `${Math.max((item.value / dashboardMaxAmount) * 100, 4)}%`,
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
               <strong>Total debit spending: ${dashboardTotal.toFixed(2)}</strong>
             </div>
             <div className="dashboard-legend" aria-label="Spending by label totals">

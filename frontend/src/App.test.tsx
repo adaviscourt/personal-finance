@@ -55,6 +55,16 @@ const mockedPrepareImport = vi.mocked(prepareImport);
 const mockedRenameAccount = vi.mocked(renameAccount);
 const mockedUpdateImportTemplate = vi.mocked(updateImportTemplate);
 
+const testStorage = new Map<string, string>();
+
+Object.defineProperty(window, "localStorage", {
+  value: {
+    getItem: (key: string) => testStorage.get(key) ?? null,
+    setItem: (key: string, value: string) => testStorage.set(key, value),
+    removeItem: (key: string) => testStorage.delete(key),
+  },
+});
+
 function renderApp(route = "/") {
   return render(
     <MemoryRouter initialEntries={[route]}>
@@ -69,6 +79,7 @@ describe("App", () => {
   });
 
   beforeEach(() => {
+    testStorage.clear();
     mockedListLabels.mockResolvedValue([
       { id: 1, slug: "uncategorized", name: "Uncategorized" },
       { id: 2, slug: "dining", name: "Dining" },
@@ -285,13 +296,46 @@ describe("App", () => {
     expect(mockedGetDashboardTransactions).toHaveBeenLastCalledWith("2026-02", { accountIds: [], labelSlugs: [] });
   });
 
+  it("persists the selected dashboard month across page refreshes", async () => {
+    renderApp();
+
+    fireEvent.change(await screen.findByLabelText("Dashboard month"), { target: { value: "2026-04" } });
+    await waitFor(() => {
+      expect(window.localStorage.getItem("personal-finance.dashboardMonth")).toBe("2026-04");
+    });
+    cleanup();
+
+    renderApp();
+
+    expect(await screen.findByLabelText("Dashboard month")).toHaveValue("2026-04");
+  });
+
+  it("persists dashboard account and label filters across page refreshes", async () => {
+    renderApp();
+
+    expect((await screen.findAllByText("Travel Card")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Checking Account" }));
+    fireEvent.change(screen.getByLabelText("Dashboard label"), { target: { value: "dining" } });
+
+    await waitFor(() => {
+      expect(window.localStorage.getItem("personal-finance.dashboardAccountIds")).toBe("[42]");
+      expect(window.localStorage.getItem("personal-finance.dashboardLabelSlug")).toBe("dining");
+    });
+    cleanup();
+
+    renderApp();
+
+    expect(await screen.findByLabelText("Dashboard label")).toHaveValue("dining");
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Checking Account" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Travel Card" })).toBeChecked();
+  });
+
   it("filters dashboard transactions by selected accounts and label", async () => {
     renderApp();
 
     expect((await screen.findAllByText("Travel Card")).length).toBeGreaterThan(0);
-    const accountFilter = screen.getByRole("listbox", { name: "Dashboard accounts" }) as HTMLSelectElement;
-    accountFilter.options[1].selected = true;
-    fireEvent.change(accountFilter);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Checking Account" }));
     fireEvent.change(screen.getByLabelText("Dashboard label"), { target: { value: "dining" } });
 
     expect(mockedGetDashboardSpendingByLabel).toHaveBeenLastCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), [42]);
