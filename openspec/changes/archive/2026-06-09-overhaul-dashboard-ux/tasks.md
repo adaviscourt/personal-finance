@@ -45,7 +45,7 @@
 
 ## 7. Verification
 
-- [ ] 7.1 Run backend tests. (#33)
-- [ ] 7.2 Run frontend tests. (#33)
-- [ ] 7.3 Run frontend build or typecheck. (#33)
-- [ ] 7.4 Manually verify dashboard, import, labeling, and account routes in the browser or dev server. (#33)
+- [x] 7.1 Run backend tests. (#33)
+- [x] 7.2 Run frontend tests. (#33)
+- [x] 7.3 Run frontend build or typecheck. (#33)
+- [x] 7.4 Manually verify dashboard, import, labeling, and account routes in the browser or dev server. (#33)

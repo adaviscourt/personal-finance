@@ -1,8 +1,15 @@
 ## Purpose
 
-Defines account listing, creation, renaming, deletion, and bootstrap default account behavior.
+Defines dedicated account listing, creation, renaming, deletion, and workflow selector behavior.
 
 ## Requirements
+
+### Requirement: Provide dedicated account management module
+The system SHALL provide a dedicated account management module for account listing, creation, renaming, and deletion.
+
+#### Scenario: User opens account management module
+- **WHEN** the user opens the account management module
+- **THEN** account listing, creation, renaming, deletion, and deletion confirmation controls are available there instead of on the dashboard home page
 
 ### Requirement: List accounts
 The system SHALL allow users to view available accounts for account management and workflow selection.
@@ -48,13 +55,13 @@ The system SHALL allow users to delete accounts and MUST require explicit confir
 - **WHEN** the user confirms deletion for an account that has transactions
 - **THEN** the system deletes the account and handles related account-scoped data without leaving invalid references
 
-### Requirement: Preserve bootstrap default account
-The system SHALL seed a default account for clean databases so first-run workflows have a valid account available.
+### Requirement: Keep accounts available to dashboard and import workflows
+The system SHALL make accounts available as selectors in dashboard and import workflows without exposing account CRUD controls on those workflow screens.
 
-#### Scenario: Clean database starts
-- **WHEN** the system initializes an empty database
-- **THEN** the system creates one `Default Account` if it does not already exist
+#### Scenario: User filters dashboard by account
+- **WHEN** the user views dashboard filters
+- **THEN** available accounts can be selected for filtering without showing account creation, rename, or delete controls
 
-#### Scenario: Startup repeats
-- **WHEN** the system initializes a database where `Default Account` already exists
-- **THEN** the system does not create a duplicate default account
+#### Scenario: User selects import account
+- **WHEN** the user prepares an import
+- **THEN** available accounts can be selected for import association without showing account creation, rename, or delete controls in the import workflow
