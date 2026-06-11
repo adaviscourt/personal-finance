@@ -827,11 +827,6 @@ function Home() {
                 </div>
                 <span>{preview.rows.length} preview row(s)</span>
               </div>
-              <div className="column-list" aria-label="Source columns">
-                {preview.source_columns.map((column) => (
-                  <span key={column}>{column}</span>
-                ))}
-              </div>
               <div className="table-wrap">
                 <table>
                   <thead>

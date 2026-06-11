@@ -986,22 +986,6 @@ button,
   border-bottom: 0;
 }
 
-.column-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.column-list span {
-  padding: 7px 10px;
-  border: 1px solid color-mix(in oklch, var(--brand) 24%, white);
-  border-radius: 999px;
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-size: 0.9rem;
-  font-weight: 800;
-}
-
 .table-wrap {
   max-height: 420px;
   overflow-x: auto;
