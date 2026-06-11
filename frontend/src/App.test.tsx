@@ -157,20 +157,16 @@ describe("App", () => {
     expect(screen.getByText("4. Review")).toBeInTheDocument();
     expect(screen.getByText("5. Confirm")).toBeInTheDocument();
     expect(await screen.findByLabelText("Import account")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
     expect(screen.getByText("Choose a source CSV file first.")).toBeInTheDocument();
     fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv")] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
-    expect(await screen.findByText("Before preparing")).toBeInTheDocument();
-    expect(screen.getByText("Map required field(s): date, description, amount, direction.")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Import account"), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Prepare Import" }));
-
-    expect(screen.getByText("Choose the account receiving this import before preparing import.")).toBeInTheDocument();
+    expect(await screen.findByText("Next: update transform preview")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Update transform preview" })).toBeDisabled();
   });
 
   it("sends users to accounts before import when no accounts exist", async () => {
@@ -197,9 +193,9 @@ describe("App", () => {
       type: "text/csv",
     });
     fireEvent.change(input, { target: { files: [file] } });
-    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
-    expect(await screen.findByText("Source Columns")).toBeInTheDocument();
+    expect(await screen.findByText("CSV preview")).toBeInTheDocument();
     expect(screen.getAllByText("Date").length).toBeGreaterThan(0);
     expect(screen.getByText("Coffee")).toBeInTheDocument();
     expect(mockedPreviewCsv).toHaveBeenCalledWith(file);
@@ -414,7 +410,7 @@ describe("App", () => {
       type: "text/csv",
     });
     fireEvent.change(await screen.findByLabelText("Statement CSV"), { target: { files: [file] } });
-    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Checking export" } });
@@ -470,7 +466,7 @@ describe("App", () => {
     fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv")] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Checking export" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
@@ -488,12 +484,12 @@ describe("App", () => {
     });
   });
 
-  it("preserves account association when updating a selected template", async () => {
+  it("uses a selected template to update the transform preview without editing mappings", async () => {
     mockedListImportTemplates.mockResolvedValue([
       {
         id: 7,
         name: "Account export",
-        account_id: 42,
+        account_id: 1,
         created_at: "2026-01-01T00:00:00+00:00",
         updated_at: "2026-01-01T00:00:00+00:00",
         config: {
@@ -511,20 +507,11 @@ describe("App", () => {
       source_columns: ["Date", "Description", "Amount"],
       rows: [{ Date: "2026-01-01", Description: "Coffee", Amount: "-4.50" }],
     });
-    mockedUpdateImportTemplate.mockResolvedValue({
-      id: 7,
-      name: "Account export",
-      account_id: 42,
-      created_at: "2026-01-01T00:00:00+00:00",
-      updated_at: "2026-01-02T00:00:00+00:00",
-      config: {
-        mappings: {
-          date: { source_column: "Date", transform: "parse_date" },
-          description: { source_column: "Description", transform: "copy_column" },
-          amount: { source_column: "Amount", transform: "absolute_numeric" },
-          direction: { source_column: "Amount", transform: "signed_amount_direction" },
-        },
-      },
+    mockedPrepareImport.mockResolvedValue({
+      upload_file_id: 22,
+      row_count: 1,
+      transformed_preview: [{ date: "2026-01-01", description: "Coffee", amount: "4.50", direction: "debit" }],
+      duplicate_candidates: [],
     });
 
     renderApp("/import");
@@ -532,17 +519,16 @@ describe("App", () => {
     fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv")] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Template"), { target: { value: "7" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update Template" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
 
-    expect(await screen.findByText("Template saved for future imports.")).toBeInTheDocument();
-    expect(mockedUpdateImportTemplate).toHaveBeenCalledWith(
-      7,
-      expect.objectContaining({ account_id: 42 }),
-    );
+    expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Template name")).not.toBeInTheDocument();
+    expect(mockedUpdateImportTemplate).not.toHaveBeenCalled();
+    expect(mockedPrepareImport).toHaveBeenCalledWith(expect.any(File), 1, expect.any(Object));
   });
 
   it("creates label rules with fixed labels and no custom label action", async () => {
@@ -603,18 +589,18 @@ describe("App", () => {
     const file = new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv", {
       type: "text/csv",
     });
+    fireEvent.change(await screen.findByLabelText("Import account"), { target: { value: "42" } });
     fireEvent.change(await screen.findByLabelText("Statement CSV"), { target: { files: [file] } });
-    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Import account"), { target: { value: "42" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[3], { target: { value: "Amount" } });
-    fireEvent.click(screen.getByRole("button", { name: "Prepare Import" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
 
-    expect(await screen.findByText("Prepared 1 row(s). Review transformed preview before confirming.")).toBeInTheDocument();
+    expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
     expect(screen.getByText("debit")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
 
@@ -643,17 +629,17 @@ describe("App", () => {
     const file = new File(["Date,Description,Amount\n2026-03-15,Coffee,-4.50\n"], "statement.csv", {
       type: "text/csv",
     });
+    fireEvent.change(await screen.findByLabelText("Import account"), { target: { value: "42" } });
     fireEvent.change(await screen.findByLabelText("Statement CSV"), { target: { files: [file] } });
-    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Import account"), { target: { value: "42" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[3], { target: { value: "Amount" } });
-    fireEvent.click(screen.getByRole("button", { name: "Prepare Import" }));
-    expect(await screen.findByText("Prepared 1 row(s). Review transformed preview before confirming.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
+    expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
 
     const reviewLink = await screen.findByRole("link", { name: "Review March 2026 imports on dashboard" });
@@ -686,18 +672,18 @@ describe("App", () => {
 
     renderApp("/import");
 
+    fireEvent.change(await screen.findByLabelText("Import account"), { target: { value: "42" } });
     fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Amount\n2026-03-15,Coffee,-4.50\n"], "statement.csv")] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Preview CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Import account"), { target: { value: "42" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
     fireEvent.change(screen.getAllByLabelText("Source column")[3], { target: { value: "Amount" } });
-    fireEvent.click(screen.getByRole("button", { name: "Prepare Import" }));
-    expect(await screen.findByText("Prepared 1 row(s). Review transformed preview before confirming.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
+    expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
 
     expect(await screen.findByText("Duplicate warning found; no transactions inserted.")).toBeInTheDocument();

@@ -260,6 +260,12 @@ function Home() {
         : `${dashboardAccountIds.length} selected`;
   const activeAccount = activeAccountId === "" ? null : accounts.find((account) => account.id === activeAccountId) ?? null;
   const missingMappingFields = REQUIRED_FIELDS.filter((field) => !mappingDraft[field]);
+  const hasPreview = Boolean(preview);
+  const showUploadStep = activeAccountId !== "";
+  const showTemplateStep = hasPreview;
+  const showMappingStep = hasPreview && selectedTemplateId === "new";
+  const showImportReview = Boolean(preparedImport);
+  const selectedTemplate = selectedTemplateId === "new" ? null : templates.find((template) => template.id === selectedTemplateId) ?? null;
   const importValidationItems = [
     selectedFile ? null : "Choose a source CSV file.",
     activeAccountId === "" ? "Choose the account receiving this import." : null,
@@ -447,11 +453,41 @@ function Home() {
         });
         setSelectedTemplateId(savedTemplate.id);
         setTemplateStatus("Template saved for future imports.");
+        await handlePrepareImport();
       }
     } catch {
       setTemplateError("Could not save that template. Check required mappings and transform settings.");
     } finally {
       setTemplateSaving(false);
+    }
+  }
+
+  async function handlePrepareImport() {
+    setImportError(null);
+    setImportStatus(null);
+    setImportResult(null);
+    if (!selectedFile) {
+      setImportError("Choose a source CSV file before updating the transform preview.");
+      return;
+    }
+    if (activeAccountId === "") {
+      setImportError("Choose the account receiving this import before updating the transform preview.");
+      return;
+    }
+    const missingField = REQUIRED_FIELDS.find((field) => !mappingDraft[field]);
+    if (missingField) {
+      setImportError(`Map the required ${missingField} field before updating the transform preview.`);
+      return;
+    }
+    setImportLoading(true);
+    try {
+      const prepared = await prepareImport(selectedFile, activeAccountId, buildTemplateConfig());
+      setPreparedImport(prepared);
+      setImportStatus(`Transform preview updated for ${prepared.row_count} row(s). Review before confirming.`);
+    } catch {
+      setImportError("Could not update transform preview. Check account id, mappings, and transform settings.");
+    } finally {
+      setImportLoading(false);
     }
   }
 
@@ -738,8 +774,12 @@ function Home() {
             value={activeAccountId}
             onChange={(event) => {
               setActiveAccountId(event.target.value ? Number(event.target.value) : "");
+              setSelectedFile(null);
+              setPreview(null);
+              setPreviewError(null);
               setPreparedImport(null);
               setImportResult(null);
+              setImportStatus(null);
             }}
           >
             <option value="">Choose account</option>
@@ -751,7 +791,8 @@ function Home() {
           </select>
           <small>Templates shown below are tied to this account.</small>
         </label>
-        <form className="upload-form" onSubmit={handlePreviewSubmit}>
+        {showUploadStep ? (
+        <form className="upload-form progressive-step" onSubmit={handlePreviewSubmit}>
           <label className="file-picker">
             <span>Statement CSV</span>
             <input
@@ -771,25 +812,55 @@ function Home() {
             />
           </label>
           <button type="submit" disabled={previewLoading}>
-            {previewLoading ? "Parsing..." : "Preview CSV"}
+            {previewLoading ? "Uploading..." : "Upload"}
           </button>
         </form>
+        ) : null}
         {previewError ? <p className="preview-error">{previewError}</p> : null}
         {preview ? (
           <div className="preview-results">
-            <div>
-              <h3>Source Columns</h3>
+            <section className="csv-preview" aria-labelledby="csv-preview-heading">
+              <div className="section-header-row">
+                <div>
+                  <h3 id="csv-preview-heading">CSV preview</h3>
+                  <p>Uploaded rows appear here before mappings or imports run.</p>
+                </div>
+                <span>{preview.rows.length} preview row(s)</span>
+              </div>
               <div className="column-list" aria-label="Source columns">
                 {preview.source_columns.map((column) => (
                   <span key={column}>{column}</span>
                 ))}
               </div>
-            </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      {preview.headers.map((header) => (
+                        <th key={header} scope="col">
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.rows.map((row, index) => (
+                      <tr key={index}>
+                        {preview.headers.map((header) => (
+                          <td key={header}>{row[header] ?? ""}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            {showTemplateStep ? (
             <form className="template-editor" onSubmit={handleTemplateSubmit}>
               <div className="template-editor-header">
                 <div>
                   <h3>Import Template</h3>
-                  <p>Map required transaction fields before generating transformed previews.</p>
+                  <p>Choose an existing account template, or add a new one when this CSV layout is unfamiliar.</p>
                 </div>
                 <label>
                   <span>Template</span>
@@ -800,6 +871,9 @@ function Home() {
                       setSelectedTemplateId(value);
                       setTemplateStatus(null);
                       setTemplateError(null);
+                      setPreparedImport(null);
+                      setImportResult(null);
+                      setImportStatus(null);
                       if (value === "new") {
                         setTemplateName("");
                         setMappingDraft(createEmptyMappings());
@@ -821,15 +895,23 @@ function Home() {
                   </select>
                 </label>
               </div>
-              <label className="template-name">
-                <span>Template name</span>
-                <input
-                  value={templateName}
-                  onChange={(event) => setTemplateName(event.target.value)}
-                  placeholder="Checking account export"
-                />
-              </label>
-              <div className="mapping-grid">
+              {selectedTemplate ? (
+                <div className="selected-template-summary">
+                  <strong>{selectedTemplate.name}</strong>
+                  <span>Template ready. Update transform preview to inspect normalized rows before import.</span>
+                </div>
+              ) : null}
+              {showMappingStep ? (
+              <div className="mapping-section">
+                <label className="template-name">
+                  <span>Template name</span>
+                  <input
+                    value={templateName}
+                    onChange={(event) => setTemplateName(event.target.value)}
+                    placeholder="Checking account export"
+                  />
+                </label>
+                <div className="mapping-grid">
                 {REQUIRED_FIELDS.map((field) => (
                   <div className="mapping-row" key={field}>
                     <strong>{field}</strong>
@@ -837,9 +919,12 @@ function Home() {
                       <span>Source column</span>
                       <select
                         value={mappingDraft[field]}
-                        onChange={(event) =>
-                          setMappingDraft((current) => ({ ...current, [field]: event.target.value }))
-                        }
+                        onChange={(event) => {
+                          setMappingDraft((current) => ({ ...current, [field]: event.target.value }));
+                          setPreparedImport(null);
+                          setImportResult(null);
+                          setImportStatus(null);
+                        }}
                       >
                         <option value="">Choose column</option>
                         {preview.source_columns.map((column) => (
@@ -853,12 +938,15 @@ function Home() {
                       <span>Transform</span>
                       <select
                         value={transformDraft[field]}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setTransformDraft((current) => ({
                             ...current,
                             [field]: event.target.value as TemplateTransform,
-                          }))
-                        }
+                          }));
+                          setPreparedImport(null);
+                          setImportResult(null);
+                          setImportStatus(null);
+                        }}
                       >
                         <option value="copy_column">copy column</option>
                         <option value="parse_date">parse date</option>
@@ -869,18 +957,29 @@ function Home() {
                     </label>
                   </div>
                 ))}
+                </div>
+                <p className="template-note">Signed amount direction saves positive as credit and negative as debit.</p>
               </div>
-              <p className="template-note">Signed amount direction saves positive as credit and negative as debit.</p>
+              ) : null}
               {templateError ? <p className="preview-error">{templateError}</p> : null}
               {templateStatus ? <p className="template-status">{templateStatus}</p> : null}
-              <button type="submit" disabled={templateSaving}>
-                {templateSaving ? "Saving..." : selectedTemplateId === "new" ? "Save Template" : "Update Template"}
-              </button>
+              <div className="import-actions">
+                {showMappingStep ? (
+                  <button type="submit" disabled={templateSaving}>
+                    {templateSaving ? "Saving..." : "Save Template"}
+                  </button>
+                ) : null}
+                <button type="button" disabled={importLoading || importValidationItems.length > 0} onClick={handlePrepareImport}>
+                  {importLoading ? "Updating..." : "Update transform preview"}
+                </button>
+              </div>
             </form>
+            ) : null}
+            {showImportReview ? (
             <div className="import-confirmation" aria-label="Import confirmation">
               <div>
                 <h3>Transformed Preview</h3>
-                <p>Prepare normalized rows for {activeAccount?.name ?? "the selected account"} before confirming import.</p>
+                <p>Normalized rows for {activeAccount?.name ?? "the selected account"}. Confirm only after dates, amounts, and directions look right.</p>
               </div>
               {importValidationItems.length > 0 ? (
                 <div className="import-validation" aria-label="Import requirements">
@@ -893,40 +992,6 @@ function Home() {
                 </div>
               ) : null}
               <div className="import-actions">
-                <button
-                  type="button"
-                  disabled={importLoading || !selectedFile}
-                  onClick={async () => {
-                    setImportError(null);
-                    setImportStatus(null);
-                    setImportResult(null);
-                    if (!selectedFile) {
-                      setImportError("Choose a source CSV file before preparing import.");
-                      return;
-                    }
-                    if (activeAccountId === "") {
-                      setImportError("Choose the account receiving this import before preparing import.");
-                      return;
-                    }
-                    const missingField = REQUIRED_FIELDS.find((field) => !mappingDraft[field]);
-                    if (missingField) {
-                      setImportError(`Map the required ${missingField} field before preparing import.`);
-                      return;
-                    }
-                    setImportLoading(true);
-                    try {
-                      const prepared = await prepareImport(selectedFile, activeAccountId, buildTemplateConfig());
-                      setPreparedImport(prepared);
-                      setImportStatus(`Prepared ${prepared.row_count} row(s). Review transformed preview before confirming.`);
-                    } catch {
-                      setImportError("Could not prepare import. Check account id, mappings, and transform settings.");
-                    } finally {
-                      setImportLoading(false);
-                    }
-                  }}
-                >
-                  {importLoading ? "Preparing..." : "Prepare Import"}
-                </button>
                 <button
                   type="button"
                   disabled={importLoading || !preparedImport}
@@ -1001,28 +1066,13 @@ function Home() {
                 </div>
               ) : null}
             </div>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    {preview.headers.map((header) => (
-                      <th key={header} scope="col">
-                        {header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.rows.map((row, index) => (
-                    <tr key={index}>
-                      {preview.headers.map((header) => (
-                        <td key={header}>{row[header] ?? ""}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            ) : null}
+            {!showImportReview ? (
+              <div className="import-next-step" role="status">
+                <strong>Next: update transform preview</strong>
+                <span>That step validates mappings, checks duplicate candidates, and creates the upload id needed for confirm.</span>
+              </div>
+            ) : null}
           </div>
         ) : null}
         </>
