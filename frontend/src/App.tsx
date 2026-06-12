@@ -5,6 +5,7 @@ import { Link, NavLink, Route, Routes } from "react-router-dom";
 import {
   confirmImport,
   createAccount,
+  createLabel,
   createLabelRule,
   createImportTemplate,
   deleteAccount,
@@ -16,6 +17,7 @@ import {
   listImportTemplates,
   previewCsv,
   prepareImport,
+  previewLabelRuleMatches,
   renameAccount,
   updateImportTemplate,
   type Account,
@@ -27,6 +29,7 @@ import {
   type ImportTemplate,
   type ImportTemplateConfig,
   type LabelRule,
+  type LabelRuleMatchPreview,
   type TemplateTransform,
   type TransactionLabel,
 } from "./api/client";
@@ -153,10 +156,17 @@ function Home() {
   const [importError, setImportError] = useState<string | null>(null);
   const [importLoading, setImportLoading] = useState(false);
   const [labels, setLabels] = useState<TransactionLabel[]>([]);
+  const [newLabelName, setNewLabelName] = useState("");
+  const [newLabelAccountId, setNewLabelAccountId] = useState<number | "">("");
+  const [newLabelIsControllable, setNewLabelIsControllable] = useState(true);
+  const [labelSaving, setLabelSaving] = useState(false);
   const [labelRules, setLabelRules] = useState<LabelRule[]>([]);
-  const [labelRuleField, setLabelRuleField] = useState<"merchant" | "description">("description");
+  const [labelRuleMatchType, setLabelRuleMatchType] = useState<"contains" | "regex">("contains");
   const [labelRulePattern, setLabelRulePattern] = useState("");
   const [labelRuleLabelId, setLabelRuleLabelId] = useState<number | "">("");
+  const [labelMatchPreview, setLabelMatchPreview] = useState<LabelRuleMatchPreview | null>(null);
+  const [labelMatchPreviewLoading, setLabelMatchPreviewLoading] = useState(false);
+  const [labelMatchPreviewError, setLabelMatchPreviewError] = useState<string | null>(null);
   const [labelRuleStatus, setLabelRuleStatus] = useState<string | null>(null);
   const [labelRuleError, setLabelRuleError] = useState<string | null>(null);
   const [labelRuleSaving, setLabelRuleSaving] = useState(false);
@@ -214,6 +224,49 @@ function Home() {
   }, []);
 
   useEffect(() => {
+    const pattern = labelRulePattern.trim();
+    if (pattern.length < 2) {
+      setLabelMatchPreview(null);
+      setLabelMatchPreviewError(null);
+      setLabelMatchPreviewLoading(false);
+      return;
+    }
+
+    let active = true;
+    const timeout = window.setTimeout(() => {
+      setLabelMatchPreviewLoading(true);
+      setLabelMatchPreviewError(null);
+      previewLabelRuleMatches({
+        label_id: labelRuleLabelId === "" ? 0 : labelRuleLabelId,
+        match_field: "description",
+        match_type: labelRuleMatchType,
+        pattern,
+      })
+        .then((previewMatches) => {
+          if (active) {
+            setLabelMatchPreview(previewMatches);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setLabelMatchPreview(null);
+            setLabelMatchPreviewError("No preview available. Check regex syntax or try a narrower pattern.");
+          }
+        })
+        .finally(() => {
+          if (active) {
+            setLabelMatchPreviewLoading(false);
+          }
+        });
+    }, 300);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+    };
+  }, [labelRuleLabelId, labelRuleMatchType, labelRulePattern]);
+
+  useEffect(() => {
     writeStoredValue(DASHBOARD_MONTH_STORAGE_KEY, selectedMonth);
     writeStoredValue(DASHBOARD_ACCOUNT_IDS_STORAGE_KEY, JSON.stringify(dashboardAccountIds));
     writeStoredValue(DASHBOARD_LABEL_SLUG_STORAGE_KEY, dashboardLabelSlug);
@@ -256,6 +309,16 @@ function Home() {
   const filteredDashboardLabels = dashboardLabelSlug
     ? dashboardLabels.filter((label) => label.label_slug === dashboardLabelSlug)
     : dashboardLabels;
+  const labelsByScope = labels.reduce<Array<{ scope: string; labels: TransactionLabel[] }>>((groups, label) => {
+    const scope = label.account_name ?? "Global";
+    const group = groups.find((currentGroup) => currentGroup.scope === scope);
+    if (group) {
+      group.labels.push(label);
+    } else {
+      groups.push({ scope, labels: [label] });
+    }
+    return groups;
+  }, []);
   const dashboardChartData = filteredDashboardLabels.map((label) => ({
     name: label.label_name,
     value: Number(label.amount),
@@ -586,13 +649,41 @@ function Home() {
     }
   }
 
+  async function handleLabelSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLabelRuleStatus(null);
+    setLabelRuleError(null);
+
+    if (!newLabelName.trim()) {
+      setLabelRuleError("Enter a label name.");
+      return;
+    }
+
+    setLabelSaving(true);
+    try {
+      const savedLabel = await createLabel({
+        name: newLabelName,
+        account_id: newLabelAccountId === "" ? null : newLabelAccountId,
+        is_controllable: newLabelIsControllable,
+      });
+      setLabels((currentLabels) => [...currentLabels, savedLabel].sort((first, second) => first.name.localeCompare(second.name)));
+      setLabelRuleLabelId(savedLabel.id);
+      setNewLabelName("");
+      setLabelRuleStatus("Label saved. Add match rules when you are ready.");
+    } catch {
+      setLabelRuleError("Could not save that label. Check for duplicate names with the same scope and control type.");
+    } finally {
+      setLabelSaving(false);
+    }
+  }
+
   async function handleLabelRuleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLabelRuleStatus(null);
     setLabelRuleError(null);
 
     if (!labelRulePattern.trim()) {
-      setLabelRuleError("Enter merchant or description text to match.");
+      setLabelRuleError("Enter description text to match.");
       return;
     }
     if (labelRuleLabelId === "") {
@@ -604,7 +695,8 @@ function Home() {
     try {
       const savedRule = await createLabelRule({
         label_id: labelRuleLabelId,
-        match_field: labelRuleField,
+        match_field: "description",
+        match_type: labelRuleMatchType,
         pattern: labelRulePattern,
       });
       setLabelRules((currentRules) => [...currentRules, savedRule]);
@@ -1185,36 +1277,87 @@ function Home() {
         )} />
         <Route path="/labeling" element={(
           <section className="label-panel" aria-labelledby="label-heading">
-        <h2 id="label-heading">Transaction labeling rules</h2>
+        <h2 id="label-heading">Transaction labels and rules</h2>
         <p className="label-intro">
-          Assign fixed labels by matching merchant or description text. Custom labels are not available in the MVP;
-          unmatched transactions stay uncategorized.
+          Create global or account-specific labels, then match transactions with plain text or regex. Preview is debounced and limited to keep large tables responsive.
         </p>
-        <form className="label-rule-form" onSubmit={handleLabelRuleSubmit}>
+        <section className="label-section" aria-labelledby="create-label-heading">
+        <div className="label-section-header">
+          <h3 id="create-label-heading">Create label</h3>
+          <p>Global labels apply everywhere. Account labels keep overloaded categories separate.</p>
+        </div>
+        <form className="label-rule-form label-create-form" onSubmit={handleLabelSubmit}>
           <label>
-            <span>Match field</span>
-            <select value={labelRuleField} onChange={(event) => setLabelRuleField(event.target.value as "merchant" | "description")}>
-              <option value="description">Description</option>
-              <option value="merchant">Merchant</option>
+            <span>Label name</span>
+            <input value={newLabelName} onChange={(event) => setNewLabelName(event.target.value)} placeholder="Loan Payment" />
+          </label>
+          <label>
+            <span>Label scope</span>
+            <select value={newLabelAccountId} onChange={(event) => setNewLabelAccountId(event.target.value ? Number(event.target.value) : "")}>
+              <option value="">Global</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>{account.name}</option>
+              ))}
             </select>
           </label>
           <label>
-            <span>Match text</span>
+            <span>Control type</span>
+            <select value={newLabelIsControllable ? "controllable" : "non-controllable"} onChange={(event) => setNewLabelIsControllable(event.target.value === "controllable")}>
+              <option value="controllable">Controllable</option>
+              <option value="non-controllable">Non-controllable</option>
+            </select>
+          </label>
+          <button type="submit" disabled={labelSaving}>{labelSaving ? "Saving..." : "Save Label"}</button>
+        </form>
+        <div className="label-pill-summary" aria-label="Current labels">
+          <div className="label-legend" aria-label="Label controllability legend">
+            <span><i className="legend-dot controllable" />Controllable</span>
+            <span><i className="legend-dot non-controllable" />Non-controllable</span>
+          </div>
+          {labelsByScope.map((group) => (
+            <div className="label-scope-group" key={group.scope}>
+              <strong>{group.scope}</strong>
+              <div className="label-pill-list">
+                {group.labels.map((label) => (
+                  <span className={`label-pill ${label.is_controllable ? "controllable" : "non-controllable"}`} key={label.id}>
+                    {label.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        </section>
+        <section className="label-section" aria-labelledby="create-rule-heading">
+        <div className="label-section-header">
+          <h3 id="create-rule-heading">Create match rule</h3>
+          <p>Rules always match transaction descriptions. Scope comes from the selected label.</p>
+        </div>
+        <form className="label-rule-form label-match-form" onSubmit={handleLabelRuleSubmit}>
+          <label>
+            <span>Match type</span>
+            <select value={labelRuleMatchType} onChange={(event) => setLabelRuleMatchType(event.target.value as "contains" | "regex")}>
+              <option value="contains">Contains</option>
+              <option value="regex">Regex</option>
+            </select>
+          </label>
+          <label>
+            <span>Match pattern</span>
             <input
               value={labelRulePattern}
               onChange={(event) => setLabelRulePattern(event.target.value)}
-              placeholder="Target, Payroll, Netflix"
+              placeholder={labelRuleMatchType === "regex" ? "^SAFEWAY(?! GAS)" : "Target, Payroll, Netflix"}
             />
           </label>
           <label>
-            <span>Fixed label</span>
+            <span>Label</span>
             <select
               value={labelRuleLabelId}
               onChange={(event) => setLabelRuleLabelId(event.target.value ? Number(event.target.value) : "")}
             >
               {labels.map((label) => (
                 <option key={label.id} value={label.id}>
-                  {label.name}
+                  {label.name}{label.account_name ? ` (${label.account_name})` : ""}
                 </option>
               ))}
             </select>
@@ -1223,6 +1366,34 @@ function Home() {
             {labelRuleSaving ? "Saving..." : "Save Label Rule"}
           </button>
         </form>
+        </section>
+        <div className="match-preview" aria-live="polite">
+          <div>
+            <strong>Pattern preview</strong>
+            <span>{labelMatchPreviewLoading ? "Checking matches..." : labelMatchPreview ? `${labelMatchPreview.total_count} match(es), showing ${labelMatchPreview.returned_count}` : "Type at least 2 characters to preview matches."}</span>
+          </div>
+          {labelMatchPreviewError ? <p className="preview-error">{labelMatchPreviewError}</p> : null}
+          {labelMatchPreview?.rows.length ? (
+            <div className="match-preview-table">
+              <table>
+                <thead>
+                  <tr><th>Date</th><th>Account</th><th>Description</th><th>Current label</th><th>Amount</th></tr>
+                </thead>
+                <tbody>
+                  {labelMatchPreview.rows.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.transaction_date}</td>
+                      <td>{row.account_name}</td>
+                      <td>{row.description}</td>
+                      <td>{row.label_name ?? "Uncategorized"}</td>
+                      <td>{row.direction === "credit" ? "+" : "-"}${row.amount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </div>
         {labelRuleError ? <p className="preview-error">{labelRuleError}</p> : null}
         {labelRuleStatus ? <p className="template-status">{labelRuleStatus}</p> : null}
         <div className="rule-list" aria-label="Existing label rules">
@@ -1230,7 +1401,8 @@ function Home() {
           {labelRules.map((rule) => (
             <article key={rule.id}>
               <strong>{rule.label_name}</strong>
-              <span>{rule.match_field} contains "{rule.pattern}"</span>
+              <span>{rule.account_name ?? "Global rule"} - description {rule.match_type === "regex" ? "matches regex" : "contains"} "{rule.pattern}"</span>
+              <span>{rule.label_is_controllable ? "Controllable" : "Non-controllable"}</span>
             </article>
           ))}
         </div>

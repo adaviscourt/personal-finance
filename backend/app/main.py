@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation
 import hashlib
 from io import BytesIO
 import json
+import re
 from typing import Any, Literal
 
 import polars as pl
@@ -173,11 +174,28 @@ class LabelResponse(BaseModel):
     id: int
     slug: str
     name: str
+    account_id: int | None
+    account_name: str | None = None
+    is_controllable: bool
+
+
+class LabelPayload(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    account_id: int | None = None
+    is_controllable: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def non_blank_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Label name must not be blank.")
+        return value.strip()
 
 
 class LabelRulePayload(BaseModel):
     label_id: int
-    match_field: Literal["merchant", "description"]
+    match_field: Literal["description"] = "description"
+    match_type: Literal["contains", "regex"] = "contains"
     pattern: str = Field(min_length=1)
 
     @field_validator("pattern")
@@ -187,16 +205,47 @@ class LabelRulePayload(BaseModel):
             raise ValueError("Match pattern must not be blank.")
         return value.strip()
 
+    @model_validator(mode="after")
+    def validate_regex(self):
+        if self.match_type == "regex":
+            try:
+                re.compile(self.pattern)
+            except re.error as error:
+                raise ValueError(f"Invalid regex: {error}") from error
+        return self
+
 
 class LabelRuleResponse(BaseModel):
     id: int
     label_id: int
     label_slug: str
     label_name: str
+    label_account_id: int | None
+    label_is_controllable: bool
+    account_id: int | None
+    account_name: str | None = None
     match_field: str
+    match_type: str
     pattern: str
     created_at: str
     applied_count: int | None = None
+
+
+class LabelRuleMatchPreviewRow(BaseModel):
+    id: int
+    transaction_date: str
+    account_name: str
+    description: str
+    merchant: str | None
+    label_name: str | None
+    amount: str
+    direction: str
+
+
+class LabelRuleMatchPreviewResponse(BaseModel):
+    total_count: int
+    returned_count: int
+    rows: list[LabelRuleMatchPreviewRow]
 
 
 class DashboardSpendingByLabelItem(BaseModel):
@@ -276,13 +325,32 @@ def require_unique_account_name(session: Session, name: str, account_id: int | N
         raise HTTPException(status_code=409, detail="Account name already exists.")
 
 
-def serialize_label(label: Label) -> LabelResponse:
+def label_slug(name: str, account_id: int | None, is_controllable: bool) -> str:
+    base_slug = re.sub(r"[^a-z0-9]+", "-", name.strip().casefold()).strip("-") or "label"
+    control_slug = "controllable" if is_controllable else "non-controllable"
+    scoped_slug = f"{base_slug}-{account_id}" if account_id is not None else base_slug
+    return f"{scoped_slug}-{control_slug}"
+
+
+def serialize_label(label: Label, account: Account | None = None) -> LabelResponse:
     if label.id is None:
         raise HTTPException(status_code=500, detail="Saved label is missing an id.")
-    return LabelResponse(id=label.id, slug=label.slug, name=label.name)
+    return LabelResponse(
+        id=label.id,
+        slug=label.slug,
+        name=label.name,
+        account_id=label.account_id,
+        account_name=account.name if account is not None else None,
+        is_controllable=label.is_controllable,
+    )
 
 
-def serialize_label_rule(rule: TransactionLabelRule, label: Label, applied_count: int | None = None) -> LabelRuleResponse:
+def serialize_label_rule(
+    rule: TransactionLabelRule,
+    label: Label,
+    account: Account | None = None,
+    applied_count: int | None = None,
+) -> LabelRuleResponse:
     if rule.id is None:
         raise HTTPException(status_code=500, detail="Saved label rule is missing an id.")
     return LabelRuleResponse(
@@ -290,7 +358,12 @@ def serialize_label_rule(rule: TransactionLabelRule, label: Label, applied_count
         label_id=rule.label_id,
         label_slug=label.slug,
         label_name=label.name,
+        label_account_id=label.account_id,
+        label_is_controllable=label.is_controllable,
+        account_id=rule.account_id,
+        account_name=account.name if account is not None else None,
         match_field=rule.match_field,
+        match_type=rule.match_type,
         pattern=rule.pattern,
         created_at=rule.created_at.isoformat(),
         applied_count=applied_count,
@@ -603,9 +676,13 @@ def get_uncategorized_label(session: Session) -> Label:
 
 
 def label_rule_matches(rule: TransactionLabelRule, transaction: Transaction) -> bool:
+    if rule.account_id is not None and transaction.account_id != rule.account_id:
+        return False
     source_value = transaction.merchant if rule.match_field == "merchant" else transaction.description
     if source_value is None:
         return False
+    if rule.match_type == "regex":
+        return re.search(rule.pattern, source_value, flags=re.IGNORECASE) is not None
     return rule.pattern.casefold() in source_value.casefold()
 
 
@@ -854,7 +931,39 @@ def confirm_import(payload: ConfirmImportPayload) -> ConfirmImportResponse:
 def list_labels() -> list[LabelResponse]:
     with Session(engine) as session:
         labels = session.exec(select(Label).order_by(Label.name)).all()
-    return [serialize_label(label) for label in labels]
+        responses = [serialize_label(label, session.get(Account, label.account_id) if label.account_id is not None else None) for label in labels]
+    return responses
+
+
+@app.post("/labels", status_code=201)
+def create_label(payload: LabelPayload) -> LabelResponse:
+    with Session(engine) as session:
+        account = session.get(Account, payload.account_id) if payload.account_id is not None else None
+        if payload.account_id is not None and account is None:
+            raise HTTPException(status_code=404, detail="Account not found.")
+
+        slug = label_slug(payload.name, payload.account_id, payload.is_controllable)
+        existing_label = session.exec(
+            select(Label).where(
+                Label.name == payload.name,
+                Label.account_id == payload.account_id,
+                Label.is_controllable == payload.is_controllable,
+            )
+        ).first()
+        if existing_label is not None:
+            raise HTTPException(status_code=409, detail="Label already exists for that scope and control type.")
+
+        label = Label(
+            slug=slug,
+            name=payload.name,
+            account_id=payload.account_id,
+            is_controllable=payload.is_controllable,
+            is_system=False,
+        )
+        session.add(label)
+        session.commit()
+        session.refresh(label)
+        return serialize_label(label, account)
 
 
 @app.get("/dashboard/spending-by-label")
@@ -937,8 +1046,63 @@ def list_transaction_label_rules() -> list[LabelRuleResponse]:
             label = session.get(Label, rule.label_id)
             if label is None:
                 raise HTTPException(status_code=500, detail="Label rule references a missing label.")
-            responses.append(serialize_label_rule(rule, label))
+            account = session.get(Account, rule.account_id) if rule.account_id is not None else None
+            responses.append(serialize_label_rule(rule, label, account))
     return responses
+
+
+@app.get("/transaction-label-rules/matches")
+def preview_transaction_label_rule_matches(
+    match_field: Literal["description"] = "description",
+    pattern: str = Query(min_length=1),
+    match_type: Literal["contains", "regex"] = "contains",
+    label_id: int | None = None,
+    limit: int = Query(default=25, ge=1, le=100),
+) -> LabelRuleMatchPreviewResponse:
+    pattern = pattern.strip()
+    if not pattern:
+        raise HTTPException(status_code=422, detail="Pattern must not be blank.")
+    if match_type == "regex":
+        try:
+            re.compile(pattern)
+        except re.error as error:
+            raise HTTPException(status_code=422, detail=f"Invalid regex: {error}") from error
+
+    account_id: int | None = None
+    with Session(engine) as session:
+        if label_id is not None:
+            label = session.get(Label, label_id)
+            if label is None:
+                raise HTTPException(status_code=404, detail="Label not found.")
+            account_id = label.account_id
+
+    preview_rule = TransactionLabelRule(label_id=0, account_id=account_id, match_field=match_field, match_type=match_type, pattern=pattern)
+    statement = select(Transaction, Account, Label).join(Account, col(Transaction.account_id) == Account.id).join(Label, col(Transaction.label_id) == Label.id, isouter=True)
+    if account_id is not None:
+        statement = statement.where(Transaction.account_id == account_id)
+    statement = statement.order_by(col(Transaction.transaction_date).desc(), col(Transaction.id).desc())
+
+    rows: list[LabelRuleMatchPreviewRow] = []
+    total_count = 0
+    with Session(engine) as session:
+        for transaction, account, label in session.exec(statement).all():
+            if not label_rule_matches(preview_rule, transaction):
+                continue
+            total_count += 1
+            if len(rows) < limit:
+                rows.append(
+                    LabelRuleMatchPreviewRow(
+                        id=transaction.id or 0,
+                        transaction_date=transaction.transaction_date.isoformat(),
+                        account_name=account.name,
+                        description=transaction.description,
+                        merchant=transaction.merchant,
+                        label_name=label.name if label is not None else None,
+                        amount=serialize_dashboard_amount(transaction.amount),
+                        direction=transaction.direction,
+                    )
+                )
+    return LabelRuleMatchPreviewResponse(total_count=total_count, returned_count=len(rows), rows=rows)
 
 
 @app.post("/transaction-label-rules", status_code=201)
@@ -950,7 +1114,9 @@ def create_transaction_label_rule(payload: LabelRulePayload) -> LabelRuleRespons
 
         rule = TransactionLabelRule(
             label_id=payload.label_id,
+            account_id=label.account_id,
             match_field=payload.match_field,
+            match_type=payload.match_type,
             pattern=payload.pattern,
         )
         session.add(rule)
@@ -960,7 +1126,8 @@ def create_transaction_label_rule(payload: LabelRulePayload) -> LabelRuleRespons
         session.commit()
         session.refresh(rule)
         session.refresh(label)
-        return serialize_label_rule(rule, label, applied_count)
+        account = session.get(Account, rule.account_id) if rule.account_id is not None else None
+        return serialize_label_rule(rule, label, account, applied_count)
 
 
 @app.post("/import-templates", status_code=201)

@@ -6,6 +6,7 @@ import App from "./App";
 import {
   confirmImport,
   createAccount,
+  createLabel,
   createLabelRule,
   createImportTemplate,
   deleteAccount,
@@ -16,6 +17,7 @@ import {
   listLabels,
   listImportTemplates,
   previewCsv,
+  previewLabelRuleMatches,
   prepareImport,
   renameAccount,
   updateImportTemplate,
@@ -24,6 +26,7 @@ import {
 vi.mock("./api/client", () => ({
   confirmImport: vi.fn(),
   createAccount: vi.fn(),
+  createLabel: vi.fn(),
   createLabelRule: vi.fn(),
   createImportTemplate: vi.fn(),
   deleteAccount: vi.fn(),
@@ -34,6 +37,7 @@ vi.mock("./api/client", () => ({
   listLabels: vi.fn(),
   listImportTemplates: vi.fn(),
   previewCsv: vi.fn(),
+  previewLabelRuleMatches: vi.fn(),
   prepareImport: vi.fn(),
   renameAccount: vi.fn(),
   updateImportTemplate: vi.fn(),
@@ -41,6 +45,7 @@ vi.mock("./api/client", () => ({
 
 const mockedConfirmImport = vi.mocked(confirmImport);
 const mockedCreateAccount = vi.mocked(createAccount);
+const mockedCreateLabel = vi.mocked(createLabel);
 const mockedCreateLabelRule = vi.mocked(createLabelRule);
 const mockedCreateImportTemplate = vi.mocked(createImportTemplate);
 const mockedDeleteAccount = vi.mocked(deleteAccount);
@@ -51,6 +56,7 @@ const mockedListLabelRules = vi.mocked(listLabelRules);
 const mockedListLabels = vi.mocked(listLabels);
 const mockedListImportTemplates = vi.mocked(listImportTemplates);
 const mockedPreviewCsv = vi.mocked(previewCsv);
+const mockedPreviewLabelRuleMatches = vi.mocked(previewLabelRuleMatches);
 const mockedPrepareImport = vi.mocked(prepareImport);
 const mockedRenameAccount = vi.mocked(renameAccount);
 const mockedUpdateImportTemplate = vi.mocked(updateImportTemplate);
@@ -81,8 +87,8 @@ describe("App", () => {
   beforeEach(() => {
     testStorage.clear();
     mockedListLabels.mockResolvedValue([
-      { id: 1, slug: "uncategorized", name: "Uncategorized" },
-      { id: 2, slug: "dining", name: "Dining" },
+      { id: 1, slug: "uncategorized", name: "Uncategorized", account_id: null, account_name: null, is_controllable: false },
+      { id: 2, slug: "dining", name: "Dining", account_id: null, account_name: null, is_controllable: true },
     ]);
     mockedListLabelRules.mockResolvedValue([]);
     mockedListAccounts.mockResolvedValue([
@@ -105,7 +111,9 @@ describe("App", () => {
     ]);
     mockedListImportTemplates.mockResolvedValue([]);
     mockedPreviewCsv.mockReset();
+    mockedPreviewLabelRuleMatches.mockReset();
     mockedCreateLabelRule.mockReset();
+    mockedCreateLabel.mockReset();
     mockedCreateAccount.mockReset();
     mockedDeleteAccount.mockReset();
     mockedCreateImportTemplate.mockReset();
@@ -117,6 +125,7 @@ describe("App", () => {
     mockedGetDashboardTransactions.mockReset();
     mockedGetDashboardSpendingByLabel.mockResolvedValue({ month: "2026-01", labels: [] });
     mockedGetDashboardTransactions.mockResolvedValue({ month: "2026-01", transactions: [] });
+    mockedPreviewLabelRuleMatches.mockResolvedValue({ total_count: 0, returned_count: 0, rows: [] });
   });
 
   it("renders primary module navigation and a dashboard-only home route", async () => {
@@ -649,41 +658,64 @@ describe("App", () => {
     expect(await screen.findByText("Row 1 missing required field: amount")).toBeInTheDocument();
   });
 
-  it("creates label rules with fixed labels and no custom label action", async () => {
+  it("creates scoped regex label rules and previews matches", async () => {
     mockedListLabelRules.mockResolvedValue([
       {
         id: 3,
         label_id: 2,
         label_slug: "dining",
         label_name: "Dining",
+        label_account_id: null,
+        label_is_controllable: true,
+        account_id: null,
+        account_name: null,
         match_field: "description",
+        match_type: "contains",
         pattern: "Cafe",
         created_at: "2026-01-01T00:00:00+00:00",
       },
     ]);
+    mockedListLabels.mockResolvedValue([
+      { id: 1, slug: "uncategorized", name: "Uncategorized", account_id: null, account_name: null, is_controllable: false },
+      { id: 2, slug: "dining", name: "Dining", account_id: null, account_name: null, is_controllable: true },
+      { id: 8, slug: "travel-dining-42", name: "Travel Dining", account_id: 42, account_name: "Travel Card", is_controllable: true },
+    ]);
     mockedCreateLabelRule.mockResolvedValue({
       id: 4,
-      label_id: 2,
-      label_slug: "dining",
-      label_name: "Dining",
-      match_field: "merchant",
+      label_id: 8,
+      label_slug: "travel-dining-42",
+      label_name: "Travel Dining",
+      label_account_id: 42,
+      label_is_controllable: true,
+      account_id: 42,
+      account_name: "Travel Card",
+      match_field: "description",
+      match_type: "regex",
       pattern: "Bistro",
       created_at: "2026-01-02T00:00:00+00:00",
       applied_count: 2,
     });
+    mockedPreviewLabelRuleMatches.mockResolvedValue({
+      total_count: 1,
+      returned_count: 1,
+      rows: [{ id: 7, transaction_date: "2026-01-04", account_name: "Travel Card", description: "Bistro dinner", merchant: "Bistro", label_name: "Uncategorized", amount: "19.00", direction: "debit" }],
+    });
 
     renderApp("/labeling");
 
-    expect(await screen.findByText("Transaction labeling rules")).toBeInTheDocument();
-    expect(screen.getByText('description contains "Cafe"')).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /custom label/i })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Match field"), { target: { value: "merchant" } });
-    fireEvent.change(screen.getByLabelText("Match text"), { target: { value: "Bistro" } });
-    fireEvent.change(screen.getByLabelText("Fixed label"), { target: { value: "2" } });
+    expect(await screen.findByText("Transaction labels and rules")).toBeInTheDocument();
+    expect(screen.getByLabelText("Current labels")).toHaveTextContent("Dining");
+    expect(screen.getByLabelText("Current labels")).toHaveTextContent("Global");
+    expect(screen.getByText('Global rule - description contains "Cafe"')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Label"), { target: { value: "8" } });
+    fireEvent.change(screen.getByLabelText("Match type"), { target: { value: "regex" } });
+    fireEvent.change(screen.getByLabelText("Match pattern"), { target: { value: "Bistro" } });
+    expect(await screen.findByText("1 match(es), showing 1")).toBeInTheDocument();
+    expect(screen.getByText("Bistro dinner")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save Label Rule" }));
 
     expect(await screen.findByText("Rule saved. Applied to 2 existing transactions.")).toBeInTheDocument();
-    expect(mockedCreateLabelRule).toHaveBeenCalledWith({ label_id: 2, match_field: "merchant", pattern: "Bistro" });
+    expect(mockedCreateLabelRule).toHaveBeenCalledWith({ label_id: 8, match_field: "description", match_type: "regex", pattern: "Bistro" });
     expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledTimes(3);
     expect(mockedGetDashboardTransactions).toHaveBeenCalledTimes(3);
   });

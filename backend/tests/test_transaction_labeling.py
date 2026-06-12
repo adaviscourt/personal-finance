@@ -84,6 +84,153 @@ def test_rejects_label_rules_for_unknown_labels() -> None:
     assert response.status_code == 404
 
 
+def test_creates_account_scoped_controllability_labels() -> None:
+    client = TestClient(app)
+    account = create_account(f"Scoped Label Account {uuid4()}")
+
+    response = client.post(
+        "/labels",
+        json={"name": "Loan Payment", "account_id": account.id, "is_controllable": False},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["name"] == "Loan Payment"
+    assert response.json()["account_id"] == account.id
+    assert response.json()["account_name"] == account.name
+    assert response.json()["is_controllable"] is False
+
+
+def test_allows_same_label_name_scope_with_different_control_type() -> None:
+    client = TestClient(app)
+    account = create_account(f"Duplicate Control Account {uuid4()}")
+
+    controllable_response = client.post(
+        "/labels",
+        json={"name": "Auto", "account_id": account.id, "is_controllable": True},
+    )
+    non_controllable_response = client.post(
+        "/labels",
+        json={"name": "Auto", "account_id": account.id, "is_controllable": False},
+    )
+    duplicate_response = client.post(
+        "/labels",
+        json={"name": "Auto", "account_id": account.id, "is_controllable": False},
+    )
+
+    assert controllable_response.status_code == 201
+    assert non_controllable_response.status_code == 201
+    assert controllable_response.json()["slug"] != non_controllable_response.json()["slug"]
+    assert duplicate_response.status_code == 409
+
+
+def test_regex_rules_can_preview_and_apply_specific_descriptions() -> None:
+    client = TestClient(app)
+    account = create_account(f"Regex Label Account {uuid4()}")
+    groceries_response = client.post(
+        "/labels",
+        json={"name": f"Safeway Grocery {uuid4()}", "account_id": account.id, "is_controllable": True},
+    )
+    auto_response = client.post(
+        "/labels",
+        json={"name": f"Safeway Gas {uuid4()}", "account_id": account.id, "is_controllable": True},
+    )
+    assert groceries_response.status_code == 201
+    assert auto_response.status_code == 201
+    groceries_id = groceries_response.json()["id"]
+    auto_id = auto_response.json()["id"]
+    with Session(engine) as session:
+        session.add(
+            Transaction(
+                account_id=account.id or 0,
+                transaction_date=date.fromisoformat("2026-07-01"),
+                transaction_month="2026-07",
+                description="SAFEWAY STORE 123",
+                normalized_description=normalize_description("SAFEWAY STORE 123"),
+                merchant="SAFEWAY",
+                amount=Decimal("42.00"),
+                direction="debit",
+                duplicate_fingerprint=f"regex-grocery-{uuid4()}",
+            )
+        )
+        session.add(
+            Transaction(
+                account_id=account.id or 0,
+                transaction_date=date.fromisoformat("2026-07-02"),
+                transaction_month="2026-07",
+                description="SAFEWAY GAS 456",
+                normalized_description=normalize_description("SAFEWAY GAS 456"),
+                merchant="SAFEWAY GAS",
+                amount=Decimal("55.00"),
+                direction="debit",
+                duplicate_fingerprint=f"regex-gas-{uuid4()}",
+            )
+        )
+        session.commit()
+
+    preview_response = client.get(
+        "/transaction-label-rules/matches",
+        params={"match_type": "regex", "pattern": "^SAFEWAY(?! GAS)", "label_id": groceries_id},
+    )
+    rule_response = client.post(
+        "/transaction-label-rules",
+        json={"label_id": groceries_id, "match_type": "regex", "pattern": "^SAFEWAY(?! GAS)"},
+    )
+    gas_rule_response = client.post(
+        "/transaction-label-rules",
+        json={"label_id": auto_id, "match_type": "regex", "pattern": "^SAFEWAY GAS"},
+    )
+
+    assert preview_response.status_code == 200
+    assert preview_response.json()["total_count"] == 1
+    assert rule_response.status_code == 201
+    assert rule_response.json()["applied_count"] == 1
+    assert gas_rule_response.status_code == 201
+    assert gas_rule_response.json()["applied_count"] == 1
+
+
+def test_account_scoped_rules_do_not_apply_to_other_accounts() -> None:
+    client = TestClient(app)
+    first_account = create_account(f"Scoped Rule First {uuid4()}")
+    second_account = create_account(f"Scoped Rule Second {uuid4()}")
+    uncategorized_id = label_id("uncategorized")
+    label_response = client.post(
+        "/labels",
+        json={"name": f"Scoped Auto {uuid4()}", "account_id": first_account.id, "is_controllable": True},
+    )
+    assert label_response.status_code == 201
+    auto_id = label_response.json()["id"]
+    description = f"Loan Payment {uuid4()}"
+    with Session(engine) as session:
+        for account in (first_account, second_account):
+            session.add(
+                Transaction(
+                    account_id=account.id or 0,
+                    transaction_date=date.fromisoformat("2026-08-01"),
+                    transaction_month="2026-08",
+                    description=description,
+                    normalized_description=normalize_description(description),
+                    merchant="Loan Servicer",
+                    amount=Decimal("250.00"),
+                    direction="debit",
+                    duplicate_fingerprint=f"scoped-rule-{account.id}-{uuid4()}",
+                )
+            )
+        session.commit()
+
+    response = client.post(
+        "/transaction-label-rules",
+        json={"label_id": auto_id, "pattern": description},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["applied_count"] == 1
+    with Session(engine) as session:
+        first_transaction = session.exec(select(Transaction).where(Transaction.account_id == first_account.id, Transaction.description == description)).one()
+        second_transaction = session.exec(select(Transaction).where(Transaction.account_id == second_account.id, Transaction.description == description)).one()
+    assert first_transaction.label_id == auto_id
+    assert second_transaction.label_id in {None, uncategorized_id}
+
+
 def test_new_rule_applies_to_matching_existing_transactions() -> None:
     client = TestClient(app)
     account = create_account(f"Issue 7 Existing Account {uuid4()}")
@@ -138,7 +285,7 @@ def test_new_rule_applies_to_matching_existing_transactions() -> None:
 
     response = client.post(
         "/transaction-label-rules",
-        json={"label_id": groceries_id, "match_field": "merchant", "pattern": "market basket"},
+        json={"label_id": groceries_id, "pattern": "market basket"},
     )
 
     assert response.status_code == 201
@@ -159,7 +306,7 @@ def test_saved_rules_apply_to_future_imports() -> None:
     merchant = f"StreamCo {uuid4()}"
     rule_response = client.post(
         "/transaction-label-rules",
-        json={"label_id": subscriptions_id, "match_field": "merchant", "pattern": merchant},
+        json={"label_id": subscriptions_id, "pattern": merchant},
     )
     assert rule_response.status_code == 201
     prepare_response = prepare_import(
