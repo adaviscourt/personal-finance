@@ -378,21 +378,21 @@ function Home() {
     (totals, transaction) => {
       const amount = Number(transaction.amount);
       if (transaction.direction === "credit") {
-        const creditBucket = transaction.label.is_controllable ? "controllable" : "nonControllable";
         return {
           ...totals,
           creditAmount: totals.creditAmount + amount,
           creditCount: totals.creditCount + 1,
-          [creditBucket]: {
-            amount: totals[creditBucket].amount + amount,
-            count: totals[creditBucket].count + 1,
-          },
         };
       }
+      const debitBucket = transaction.label.is_controllable ? "controllable" : "nonControllable";
       return {
         ...totals,
         debitAmount: totals.debitAmount + amount,
         debitCount: totals.debitCount + 1,
+        [debitBucket]: {
+          amount: totals[debitBucket].amount + amount,
+          count: totals[debitBucket].count + 1,
+        },
       };
     },
     {
@@ -887,12 +887,7 @@ function Home() {
                 <span>Debit activity</span>
                 <strong>{formatCurrency(dashboardKpis.debitAmount)}</strong>
                 <em>{dashboardKpis.debitCount} debit row(s)</em>
-              </article>
-              <article>
-                <span>Credit activity</span>
-                <strong>{formatCurrency(dashboardKpis.creditAmount)}</strong>
-                <em>{dashboardKpis.creditCount} credit row(s)</em>
-                <div className="credit-split" aria-label="Credit activity split">
+                <div className="credit-split" aria-label="Debit activity split">
                   <div>
                     <span>Controllable</span>
                     <b>{formatCurrency(dashboardKpis.controllable.amount)}</b>
@@ -904,6 +899,11 @@ function Home() {
                     <em>{dashboardKpis.nonControllable.count} row(s)</em>
                   </div>
                 </div>
+              </article>
+              <article>
+                <span>Credit activity</span>
+                <strong>{formatCurrency(dashboardKpis.creditAmount)}</strong>
+                <em>{dashboardKpis.creditCount} credit row(s)</em>
               </article>
               <article>
                 <span>Net activity</span>

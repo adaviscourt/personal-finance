@@ -262,6 +262,8 @@ describe("App", () => {
     expect(screen.getByRole("columnheader", { name: "Amount" })).toBeInTheDocument();
     expect(screen.getByText("Debit activity")).toBeInTheDocument();
     expect(screen.getByText("1 debit row(s)")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Debit activity split")).getByText("$25.25")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Debit activity split")).getByText("$0.00")).toBeInTheDocument();
     expect(screen.getByText("Credit activity")).toBeInTheDocument();
     expect(screen.getByText("1 credit row(s)")).toBeInTheDocument();
     expect(screen.getAllByText("$1800.00").length).toBeGreaterThan(0);
