@@ -590,6 +590,44 @@ describe("App", () => {
     });
   });
 
+  it("shows prepare errors before transformed preview exists", async () => {
+    mockedListImportTemplates.mockResolvedValue([
+      {
+        id: 8,
+        name: "Checking",
+        account_id: 1,
+        created_at: "2026-01-01T00:00:00+00:00",
+        updated_at: "2026-01-01T00:00:00+00:00",
+        config: {
+          mappings: {
+            date: { source_column: "Date", transform: "parse_date" },
+            description: { source_column: "Description", transform: "copy_column" },
+            amount: { transform: "split_amount", debit_column: "Debit", credit_column: "Credit" },
+            direction: { transform: "split_amount_direction", debit_column: "Debit", credit_column: "Credit" },
+          },
+        },
+      },
+    ]);
+    mockedPreviewCsv.mockResolvedValue({
+      headers: ["Date", "Description", "Debit", "Credit"],
+      source_columns: ["Date", "Description", "Debit", "Credit"],
+      rows: [{ Date: "2026-01-01", Description: "Coffee", Debit: "", Credit: "" }],
+    });
+    mockedPrepareImport.mockRejectedValue({ response: { data: { detail: "Row 1 missing required field: amount" } } });
+
+    renderApp("/import");
+
+    fireEvent.change(await screen.findByLabelText("Statement CSV"), {
+      target: { files: [new File(["Date,Description,Debit,Credit\n2026-01-01,Coffee,,\n"], "statement.csv")] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Template"), { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
+
+    expect(await screen.findByText("Row 1 missing required field: amount")).toBeInTheDocument();
+  });
+
   it("creates label rules with fixed labels and no custom label action", async () => {
     mockedListLabelRules.mockResolvedValue([
       {

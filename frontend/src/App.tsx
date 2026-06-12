@@ -116,6 +116,15 @@ function formatMonthLabel(month: string): string {
   return `${monthName} ${year}`;
 }
 
+function apiErrorDetail(error: unknown): string | null {
+  if (typeof error !== "object" || error === null || !("response" in error)) {
+    return null;
+  }
+  const response = (error as { response?: { data?: { detail?: unknown } } }).response;
+  const detail = response?.data?.detail;
+  return typeof detail === "string" ? detail : null;
+}
+
 function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<CsvPreviewResponse | null>(null);
@@ -512,8 +521,8 @@ function Home() {
       const prepared = await prepareImport(selectedFile, activeAccountId, buildTemplateConfig());
       setPreparedImport(prepared);
       setImportStatus(`Transform preview updated for ${prepared.row_count} row(s). Review before confirming.`);
-    } catch {
-      setImportError("Could not update transform preview. Check account id, mappings, and transform settings.");
+    } catch (error) {
+      setImportError(apiErrorDetail(error) ?? "Could not update transform preview. Check account id, mappings, and transform settings.");
     } finally {
       setImportLoading(false);
     }
@@ -1023,6 +1032,7 @@ function Home() {
                   {importLoading ? "Updating..." : "Update transform preview"}
                 </button>
               </div>
+              {importError ? <p className="preview-error">{importError}</p> : null}
             </form>
             ) : null}
             {showImportReview ? (
@@ -1070,7 +1080,6 @@ function Home() {
                   {importLoading ? "Confirming..." : "Confirm Import"}
                 </button>
               </div>
-              {importError ? <p className="preview-error">{importError}</p> : null}
               {importStatus ? <p className="template-status">{importStatus}</p> : null}
               {importResult && importResult.inserted_count > 0 ? (
                 <Link

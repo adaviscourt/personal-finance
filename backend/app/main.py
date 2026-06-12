@@ -374,7 +374,7 @@ def parse_decimal_value(value: Any) -> Decimal | None:
         return None
     if isinstance(value, str):
         cleaned = value.strip()
-        if not cleaned:
+        if not cleaned or cleaned in {"-", "--", "—", "–"}:
             return None
         is_parenthesized_negative = cleaned.startswith("(") and cleaned.endswith(")")
         cleaned = cleaned.removeprefix("(").removesuffix(")")

@@ -30,6 +30,17 @@ def import_template_config() -> dict:
     }
 
 
+def split_import_template_config() -> dict:
+    return {
+        "mappings": {
+            "date": {"source_column": "Date", "transform": "parse_date"},
+            "description": {"source_column": "Description", "transform": "copy_column"},
+            "amount": {"transform": "split_amount", "debit_column": "Debit", "credit_column": "Credit"},
+            "direction": {"transform": "split_amount_direction", "debit_column": "Debit", "credit_column": "Credit"},
+        }
+    }
+
+
 def create_account(name: str) -> Account:
     init_db()
     with Session(engine) as session:
@@ -47,6 +58,14 @@ def prepare_import(client: TestClient, account_id: int, csv_file: str):
     return client.post(
         "/imports/prepare",
         data={"account_id": str(account_id), "template_config": json.dumps(import_template_config())},
+        files={"file": ("statement.csv", csv_file, "text/csv")},
+    )
+
+
+def prepare_split_import(client: TestClient, account_id: int, csv_file: str):
+    return client.post(
+        "/imports/prepare",
+        data={"account_id": str(account_id), "template_config": json.dumps(split_import_template_config())},
         files={"file": ("statement.csv", csv_file, "text/csv")},
     )
 
@@ -87,6 +106,37 @@ def test_prepare_persists_upload_and_raw_rows_without_transactions() -> None:
     assert len(raw_rows) == 1
     assert raw_rows[0].raw_data["Description"] == "Coffee"
     assert transactions == []
+
+
+def test_prepare_supports_split_debit_credit_columns() -> None:
+    client = TestClient(app)
+    account = create_account(f"Issue Split Prepare Account {uuid4()}")
+
+    response = prepare_split_import(
+        client,
+        account.id or 0,
+        "Date,Description,Debit,Credit\n2026-01-01,Coffee,4.50,\n2026-01-02,Refund,,7.25\n",
+    )
+
+    assert response.status_code == 201, response.json()
+    assert response.json()["transformed_preview"] == [
+        {"date": "2026-01-01", "description": "Coffee", "amount": "4.50", "direction": "debit"},
+        {"date": "2026-01-02", "description": "Refund", "amount": "7.25", "direction": "credit"},
+    ]
+
+
+def test_prepare_treats_split_amount_dash_placeholders_as_blank() -> None:
+    client = TestClient(app)
+    account = create_account(f"Issue Split Dash Account {uuid4()}")
+
+    response = prepare_split_import(
+        client,
+        account.id or 0,
+        "Date,Description,Debit,Credit\n2026-01-01,Coffee,4.50,-\n2026-01-02,Refund,--,7.25\n",
+    )
+
+    assert response.status_code == 201, response.json()
+    assert [row["direction"] for row in response.json()["transformed_preview"]] == ["debit", "credit"]
 
 
 def test_prepare_rejects_missing_account_before_storing_rows() -> None:
