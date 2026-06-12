@@ -607,6 +607,19 @@ button,
   min-width: 760px;
 }
 
+.transaction-table th:nth-child(1),
+.transaction-table td:nth-child(1) {
+  width: 112px;
+  min-width: 112px;
+  white-space: nowrap;
+}
+
+.transaction-table th:nth-child(3),
+.transaction-table td:nth-child(3) {
+  width: 32%;
+  max-width: 300px;
+}
+
 .transaction-table td strong,
 .transaction-table td span {
   display: block;
