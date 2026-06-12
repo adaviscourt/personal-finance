@@ -435,10 +435,10 @@ def apply_transform(row: dict[str, Any], mapping: TemplateFieldMapping) -> Any:
         return serialize_decimal(abs(parsed_value)) if parsed_value is not None else None
     if mapping.transform == "split_amount":
         credit_value = parse_decimal_value(source_value(row, mapping.credit_column))
-        if credit_value is not None and credit_value != 0:
+        if credit_value is not None:
             return serialize_decimal(abs(credit_value))
         debit_value = parse_decimal_value(source_value(row, mapping.debit_column))
-        if debit_value is not None and debit_value != 0:
+        if debit_value is not None:
             return serialize_decimal(abs(debit_value))
         return None
     if mapping.transform == "signed_amount_direction":
@@ -447,9 +447,9 @@ def apply_transform(row: dict[str, Any], mapping: TemplateFieldMapping) -> Any:
             return None
         return mapping.positive_direction if parsed_value > 0 else mapping.negative_direction
     if mapping.transform == "split_amount_direction":
-        if is_present_amount(source_value(row, mapping.credit_column)):
+        if parse_decimal_value(source_value(row, mapping.credit_column)) is not None:
             return "credit"
-        if is_present_amount(source_value(row, mapping.debit_column)):
+        if parse_decimal_value(source_value(row, mapping.debit_column)) is not None:
             return "debit"
         return None
     if mapping.transform == "value_lookup":

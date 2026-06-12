@@ -139,6 +139,22 @@ def test_prepare_treats_split_amount_dash_placeholders_as_blank() -> None:
     assert [row["direction"] for row in response.json()["transformed_preview"]] == ["debit", "credit"]
 
 
+def test_prepare_allows_zero_split_amount_values() -> None:
+    client = TestClient(app)
+    account = create_account(f"Issue Split Zero Account {uuid4()}")
+
+    response = prepare_split_import(
+        client,
+        account.id or 0,
+        "Date,Description,Debit,Credit\n2026-01-01,Adjustment,0.00,\n",
+    )
+
+    assert response.status_code == 201, response.json()
+    assert response.json()["transformed_preview"] == [
+        {"date": "2026-01-01", "description": "Adjustment", "amount": "0.00", "direction": "debit"},
+    ]
+
+
 def test_prepare_rejects_missing_account_before_storing_rows() -> None:
     init_db()
     client = TestClient(app)
