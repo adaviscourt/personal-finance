@@ -521,8 +521,38 @@ button,
 
 .dashboard-transactions {
   display: grid;
-  gap: 10px;
+  gap: 14px;
   margin: 22px 24px 20px;
+}
+
+.dashboard-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.dashboard-kpis article {
+  display: grid;
+  gap: 7px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+}
+
+.dashboard-kpis span,
+.dashboard-kpis em {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.dashboard-kpis strong {
+  color: var(--ink);
+  font-size: 1.45rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
 }
 
 .dashboard-table-header {

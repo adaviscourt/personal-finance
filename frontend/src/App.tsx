@@ -262,6 +262,24 @@ function Home() {
     amount: label.amount,
   }));
   const dashboardTotal = dashboardChartData.reduce((total, item) => total + item.value, 0);
+  const dashboardKpis = dashboardTransactions.reduce(
+    (totals, transaction) => {
+      const amount = Number(transaction.amount);
+      if (transaction.direction === "credit") {
+        return {
+          ...totals,
+          creditAmount: totals.creditAmount + amount,
+          creditCount: totals.creditCount + 1,
+        };
+      }
+      return {
+        ...totals,
+        debitAmount: totals.debitAmount + amount,
+        debitCount: totals.debitCount + 1,
+      };
+    },
+    { creditAmount: 0, creditCount: 0, debitAmount: 0, debitCount: 0 },
+  );
   const dashboardMaxAmount = Math.max(...dashboardChartData.map((item) => item.value), 1);
   const allDashboardAccountsSelected = dashboardAccountIds.length === 0 || dashboardAccountIds.length === accounts.length;
   const dashboardAccountSummary =
@@ -322,6 +340,10 @@ function Home() {
     const amount = Number(transaction.amount);
     const sign = transaction.direction === "credit" ? "+" : "-";
     return `${sign}$${amount.toFixed(2)}`;
+  }
+
+  function formatCurrency(amount: number): string {
+    return `$${amount.toFixed(2)}`;
   }
 
   function toggleDashboardAccount(accountId: number, checked: boolean) {
@@ -664,6 +686,18 @@ function Home() {
           <div className="dashboard-empty">No transactions available for {selectedMonth} and selected filters.</div>
         ) : (
           <div className="dashboard-transactions">
+            <div className="dashboard-kpis" aria-label="Credit and debit summary">
+              <article>
+                <span>Debit activity</span>
+                <strong>{formatCurrency(dashboardKpis.debitAmount)}</strong>
+                <em>{dashboardKpis.debitCount} debit row(s)</em>
+              </article>
+              <article>
+                <span>Credit activity</span>
+                <strong>{formatCurrency(dashboardKpis.creditAmount)}</strong>
+                <em>{dashboardKpis.creditCount} credit row(s)</em>
+              </article>
+            </div>
             <div className="dashboard-table-header">
               <h3>Transactions</h3>
               <span>{dashboardTransactions.length} row(s)</span>

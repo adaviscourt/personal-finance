@@ -225,6 +225,19 @@ describe("App", () => {
           source_category: null,
           check_number: null,
         },
+        {
+          id: 11,
+          transaction_date: "2026-01-05",
+          account: { id: 1, name: "Checking Account" },
+          description: "Payroll deposit",
+          merchant: "Payroll",
+          label: { id: 1, slug: "income", name: "Income" },
+          direction: "credit",
+          amount: "1800.00",
+          source_type: null,
+          source_category: null,
+          check_number: null,
+        },
       ],
     });
 
@@ -238,8 +251,13 @@ describe("App", () => {
     expect(screen.getByRole("columnheader", { name: "Label" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Direction" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Amount" })).toBeInTheDocument();
+    expect(screen.getByText("Debit activity")).toBeInTheDocument();
+    expect(screen.getByText("1 debit row(s)")).toBeInTheDocument();
+    expect(screen.getByText("Credit activity")).toBeInTheDocument();
+    expect(screen.getByText("1 credit row(s)")).toBeInTheDocument();
+    expect(screen.getByText("$1800.00")).toBeInTheDocument();
     expect((await screen.findAllByText("Groceries")).length).toBeGreaterThan(0);
-    expect(screen.getByText("$25.25")).toBeInTheDocument();
+    expect(screen.getAllByText("$25.25").length).toBeGreaterThan(0);
     expect(screen.getByText("Total debit spending: $33.25")).toBeInTheDocument();
     expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), []);
     expect(mockedGetDashboardTransactions).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), {
