@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>personal-finance</Name>
+  <Repository>ghcr.io/adaviscourt/personal-finance:latest</Repository>
+  <Registry>https://ghcr.io/adaviscourt/personal-finance</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/adaviscourt/personal-finance</Support>
+  <Project>https://github.com/adaviscourt/personal-finance</Project>
+  <Overview>Personal finance dashboard with CSV imports, account templates, labels, and SQLite persistence.</Overview>
+  <Category>Productivity: Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/adaviscourt/personal-finance/main/unraid/personal-finance.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/adaviscourt/personal-finance/main/image.svg</Icon>
+  <ExtraParams></ExtraParams>
+  <PostArgs></PostArgs>
+  <CPUset></CPUset>
+  <DateInstalled></DateInstalled>
+  <DonateText></DonateText>
+  <DonateLink></DonateLink>
+  <Requires></Requires>
+  <Config Name="Web Port" Target="8000" Default="8000" Mode="tcp" Description="Web UI and FastAPI port" Type="Port" Display="always" Required="true" Mask="false">8000</Config>
+  <Config Name="App Data" Target="/data" Default="/mnt/user/appdata/personal-finance" Mode="rw" Description="Persistent SQLite database storage. Keep DATABASE_URL under /data to preserve data across container restarts and upgrades." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/personal-finance</Config>
+  <Config Name="Database URL" Target="DATABASE_URL" Default="sqlite:////data/personal_finance.db" Description="SQLite database URL inside the container. Keep this under /data for persistence." Type="Variable" Display="advanced" Required="true" Mask="false">sqlite:////data/personal_finance.db</Config>
+</Container>

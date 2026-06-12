@@ -4,13 +4,15 @@ from decimal import Decimal, InvalidOperation
 import hashlib
 from io import BytesIO
 import json
+from pathlib import Path
 import re
 from typing import Any, Literal
 
 import polars as pl
 from fastapi import FastAPI, Form, HTTPException, Query, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import func, or_
 from sqlmodel import Session, col, select
@@ -32,6 +34,7 @@ from app.database import (
 
 MAX_PREVIEW_UPLOAD_BYTES = 10 * 1024 * 1024
 REQUIRED_TEMPLATE_MAPPINGS = {"date", "description", "amount", "direction"}
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 class CsvPreviewResponse(BaseModel):
@@ -741,6 +744,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+if (STATIC_DIR / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+
 
 @app.get("/health")
 def health() -> dict[str, str]:
@@ -1200,3 +1206,16 @@ def delete_import_template(template_id: int) -> Response:
         session.commit()
 
     return Response(status_code=204)
+
+
+@app.get("/{path:path}", include_in_schema=False)
+def serve_frontend(path: str) -> FileResponse:
+    requested_path = (STATIC_DIR / path).resolve()
+    if path and requested_path.is_file() and requested_path.is_relative_to(STATIC_DIR.resolve()):
+        return FileResponse(requested_path)
+
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+
+    raise HTTPException(status_code=404, detail="Frontend static files not found.")
