@@ -12,7 +12,7 @@ from app.config import settings
 
 
 LABEL_TAXONOMY = (
-    ("uncategorized", "Uncategorized", False),
+    ("uncategorized", "Uncategorized", True),
     ("housing", "Housing", False),
     ("auto", "Auto", True),
     ("groceries", "Groceries", True),
