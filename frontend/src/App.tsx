@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, NavLink, Route, Routes } from "react-router-dom";
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import {
   confirmImport,
   createAccount,
+  createLabel,
   createLabelRule,
   createImportTemplate,
   deleteAccount,
@@ -17,6 +17,7 @@ import {
   listImportTemplates,
   previewCsv,
   prepareImport,
+  previewLabelRuleMatches,
   renameAccount,
   updateImportTemplate,
   type Account,
@@ -28,25 +29,43 @@ import {
   type ImportTemplate,
   type ImportTemplateConfig,
   type LabelRule,
+  type LabelRuleMatchPreview,
   type TemplateTransform,
   type TransactionLabel,
 } from "./api/client";
 import "./App.css";
 
 const REQUIRED_FIELDS = ["date", "description", "amount", "direction"] as const;
+const OPTIONAL_SPLIT_FIELDS = ["debit", "credit"] as const;
+const DASHBOARD_MONTH_STORAGE_KEY = "personal-finance.dashboardMonth";
+const DASHBOARD_ACCOUNT_IDS_STORAGE_KEY = "personal-finance.dashboardAccountIds";
+const DASHBOARD_LABEL_SLUG_STORAGE_KEY = "personal-finance.dashboardLabelSlug";
 const DEFAULT_TRANSFORMS: Record<(typeof REQUIRED_FIELDS)[number], TemplateTransform> = {
   date: "parse_date",
   description: "copy_column",
   amount: "absolute_numeric",
   direction: "signed_amount_direction",
 };
-const CHART_COLORS = ["#426b35", "#7b5d2a", "#5868a8", "#b55c3d", "#2f7282", "#8a4c82"];
+const CHART_COLORS = ["#0850c4", "#063d95", "#5868a8", "#7b5d2a", "#2f7282", "#8a4c82"];
 
-type MappingDraft = Record<(typeof REQUIRED_FIELDS)[number], string>;
+type RequiredMappingField = (typeof REQUIRED_FIELDS)[number];
+type OptionalSplitField = (typeof OPTIONAL_SPLIT_FIELDS)[number];
+type MappingDraft = Record<RequiredMappingField | OptionalSplitField, string>;
 type TransformDraft = Record<(typeof REQUIRED_FIELDS)[number], TemplateTransform>;
+type DashboardSortKey = "date" | "account" | "description" | "label" | "direction" | "amount";
+type SortDirection = "asc" | "desc";
+
+const DASHBOARD_SORT_LABELS: Record<DashboardSortKey, string> = {
+  date: "Date",
+  account: "Account",
+  description: "Description",
+  label: "Label",
+  direction: "Direction",
+  amount: "Amount",
+};
 
 function createEmptyMappings(): MappingDraft {
-  return { date: "", description: "", amount: "", direction: "" };
+  return { date: "", description: "", amount: "", direction: "", debit: "", credit: "" };
 }
 
 function createDefaultTransforms(): TransformDraft {
@@ -55,6 +74,54 @@ function createDefaultTransforms(): TransformDraft {
 
 function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
+}
+
+function readStoredDashboardMonth(): string | null {
+  try {
+    return window.localStorage?.getItem?.(DASHBOARD_MONTH_STORAGE_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function readStoredDashboardAccountIds(): number[] {
+  try {
+    const storedIds = window.localStorage?.getItem?.(DASHBOARD_ACCOUNT_IDS_STORAGE_KEY);
+    const parsedIds: unknown = storedIds ? JSON.parse(storedIds) : [];
+    return Array.isArray(parsedIds) ? parsedIds.filter((id): id is number => Number.isInteger(id)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function readStoredDashboardLabelSlugs(): string[] {
+  let storedSlug = "";
+  try {
+    storedSlug = window.localStorage?.getItem?.(DASHBOARD_LABEL_SLUG_STORAGE_KEY) ?? "";
+    if (!storedSlug) {
+      return [];
+    }
+    const parsedSlugs: unknown = JSON.parse(storedSlug);
+    if (Array.isArray(parsedSlugs)) {
+      return parsedSlugs.filter((slug): slug is string => typeof slug === "string" && slug.length > 0);
+    }
+    return typeof parsedSlugs === "string" && parsedSlugs.length > 0 ? [parsedSlugs] : [];
+  } catch {
+    return storedSlug ? [storedSlug] : [];
+  }
+}
+
+function writeStoredValue(key: string, value: string) {
+  try {
+    window.localStorage?.setItem?.(key, value);
+  } catch {
+    // Storage can be unavailable in private mode or test environments.
+  }
+}
+
+function initialDashboardMonth(): string {
+  const storedMonth = readStoredDashboardMonth();
+  return storedMonth && /^\d{4}-\d{2}$/.test(storedMonth) ? storedMonth : currentMonth();
 }
 
 function importReviewMonth(preparedImport: ImportPrepareResponse | null): string | null {
@@ -70,6 +137,34 @@ function formatMonthLabel(month: string): string {
   const [year, monthNumber] = month.split("-");
   const monthName = new Date(Number(year), Number(monthNumber) - 1, 1).toLocaleString("en-US", { month: "long" });
   return `${monthName} ${year}`;
+}
+
+function apiErrorDetail(error: unknown): string | null {
+  if (typeof error !== "object" || error === null || !("response" in error)) {
+    return null;
+  }
+  const response = (error as { response?: { data?: { detail?: unknown } } }).response;
+  const detail = response?.data?.detail;
+  return typeof detail === "string" ? detail : null;
+}
+
+function dashboardSortValue(transaction: DashboardTransactionRow, key: DashboardSortKey): string | number {
+  if (key === "date") {
+    return transaction.transaction_date;
+  }
+  if (key === "account") {
+    return transaction.account.name;
+  }
+  if (key === "description") {
+    return transaction.merchant || transaction.description;
+  }
+  if (key === "label") {
+    return transaction.label.name;
+  }
+  if (key === "direction") {
+    return transaction.direction;
+  }
+  return Number(transaction.amount);
 }
 
 function Home() {
@@ -100,18 +195,26 @@ function Home() {
   const [importError, setImportError] = useState<string | null>(null);
   const [importLoading, setImportLoading] = useState(false);
   const [labels, setLabels] = useState<TransactionLabel[]>([]);
+  const [newLabelName, setNewLabelName] = useState("");
+  const [newLabelAccountId, setNewLabelAccountId] = useState<number | "">("");
+  const [newLabelIsControllable, setNewLabelIsControllable] = useState(true);
+  const [labelSaving, setLabelSaving] = useState(false);
   const [labelRules, setLabelRules] = useState<LabelRule[]>([]);
-  const [labelRuleField, setLabelRuleField] = useState<"merchant" | "description">("description");
+  const [labelRuleMatchType, setLabelRuleMatchType] = useState<"contains" | "regex">("contains");
   const [labelRulePattern, setLabelRulePattern] = useState("");
   const [labelRuleLabelId, setLabelRuleLabelId] = useState<number | "">("");
+  const [labelMatchPreview, setLabelMatchPreview] = useState<LabelRuleMatchPreview | null>(null);
+  const [labelMatchPreviewLoading, setLabelMatchPreviewLoading] = useState(false);
+  const [labelMatchPreviewError, setLabelMatchPreviewError] = useState<string | null>(null);
   const [labelRuleStatus, setLabelRuleStatus] = useState<string | null>(null);
   const [labelRuleError, setLabelRuleError] = useState<string | null>(null);
   const [labelRuleSaving, setLabelRuleSaving] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
-  const [dashboardAccountIds, setDashboardAccountIds] = useState<number[]>([]);
-  const [dashboardLabelSlug, setDashboardLabelSlug] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState(initialDashboardMonth);
+  const [dashboardAccountIds, setDashboardAccountIds] = useState<number[]>(readStoredDashboardAccountIds);
+  const [dashboardLabelSlugs, setDashboardLabelSlugs] = useState<string[]>(readStoredDashboardLabelSlugs);
   const [dashboardLabels, setDashboardLabels] = useState<DashboardSpendingLabel[]>([]);
   const [dashboardTransactions, setDashboardTransactions] = useState<DashboardTransactionRow[]>([]);
+  const [dashboardSort, setDashboardSort] = useState<{ key: DashboardSortKey; direction: SortDirection }>({ key: "date", direction: "desc" });
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const previewRequestId = useRef(0);
@@ -161,6 +264,53 @@ function Home() {
   }, []);
 
   useEffect(() => {
+    const pattern = labelRulePattern.trim();
+    if (pattern.length < 2) {
+      setLabelMatchPreview(null);
+      setLabelMatchPreviewError(null);
+      setLabelMatchPreviewLoading(false);
+      return;
+    }
+
+    let active = true;
+    const timeout = window.setTimeout(() => {
+      setLabelMatchPreviewLoading(true);
+      setLabelMatchPreviewError(null);
+      previewLabelRuleMatches({
+        label_id: labelRuleLabelId === "" ? 0 : labelRuleLabelId,
+        match_field: "description",
+        match_type: labelRuleMatchType,
+        pattern,
+      })
+        .then((previewMatches) => {
+          if (active) {
+            setLabelMatchPreview(previewMatches);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setLabelMatchPreview(null);
+            setLabelMatchPreviewError("No preview available. Check regex syntax or try a narrower pattern.");
+          }
+        })
+        .finally(() => {
+          if (active) {
+            setLabelMatchPreviewLoading(false);
+          }
+        });
+    }, 300);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+    };
+  }, [labelRuleLabelId, labelRuleMatchType, labelRulePattern]);
+
+  useEffect(() => {
+    writeStoredValue(DASHBOARD_MONTH_STORAGE_KEY, selectedMonth);
+    writeStoredValue(DASHBOARD_ACCOUNT_IDS_STORAGE_KEY, JSON.stringify(dashboardAccountIds));
+    writeStoredValue(DASHBOARD_LABEL_SLUG_STORAGE_KEY, JSON.stringify(dashboardLabelSlugs));
+
     let active = true;
     setDashboardError(null);
     setDashboardLoading(true);
@@ -169,7 +319,7 @@ function Home() {
       getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds),
       getDashboardTransactions(selectedMonth, {
         accountIds: dashboardAccountIds,
-        labelSlugs: dashboardLabelSlug ? [dashboardLabelSlug] : [],
+        labelSlugs: dashboardLabelSlugs,
       }),
     ])
       .then(([spendingDashboard, transactionDashboard]) => {
@@ -194,19 +344,101 @@ function Home() {
     return () => {
       active = false;
     };
-  }, [selectedMonth, dashboardAccountIds, dashboardLabelSlug]);
+  }, [selectedMonth, dashboardAccountIds, dashboardLabelSlugs]);
 
-  const filteredDashboardLabels = dashboardLabelSlug
-    ? dashboardLabels.filter((label) => label.label_slug === dashboardLabelSlug)
+  const filteredDashboardLabels = dashboardLabelSlugs.length > 0
+    ? dashboardLabels.filter((label) => dashboardLabelSlugs.includes(label.label_slug))
     : dashboardLabels;
+  const sortedDashboardTransactions = [...dashboardTransactions].sort((first, second) => {
+    const firstValue = dashboardSortValue(first, dashboardSort.key);
+    const secondValue = dashboardSortValue(second, dashboardSort.key);
+    const directionMultiplier = dashboardSort.direction === "asc" ? 1 : -1;
+    if (typeof firstValue === "number" && typeof secondValue === "number") {
+      return (firstValue - secondValue) * directionMultiplier;
+    }
+    return String(firstValue).localeCompare(String(secondValue), undefined, { numeric: true, sensitivity: "base" }) * directionMultiplier;
+  });
+  const labelsByScope = labels.reduce<Array<{ scope: string; labels: TransactionLabel[] }>>((groups, label) => {
+    const scope = label.account_name ?? "Global";
+    const group = groups.find((currentGroup) => currentGroup.scope === scope);
+    if (group) {
+      group.labels.push(label);
+    } else {
+      groups.push({ scope, labels: [label] });
+    }
+    return groups;
+  }, []);
   const dashboardChartData = filteredDashboardLabels.map((label) => ({
     name: label.label_name,
     value: Number(label.amount),
     amount: label.amount,
   }));
   const dashboardTotal = dashboardChartData.reduce((total, item) => total + item.value, 0);
+  const dashboardKpis = dashboardTransactions.reduce(
+    (totals, transaction) => {
+      const amount = Number(transaction.amount);
+      if (transaction.direction === "credit") {
+        const creditBucket = transaction.label.is_controllable ? "controllable" : "nonControllable";
+        return {
+          ...totals,
+          creditAmount: totals.creditAmount + amount,
+          creditCount: totals.creditCount + 1,
+          [creditBucket]: {
+            amount: totals[creditBucket].amount + amount,
+            count: totals[creditBucket].count + 1,
+          },
+        };
+      }
+      return {
+        ...totals,
+        debitAmount: totals.debitAmount + amount,
+        debitCount: totals.debitCount + 1,
+      };
+    },
+    {
+      creditAmount: 0,
+      creditCount: 0,
+      debitAmount: 0,
+      debitCount: 0,
+      controllable: { amount: 0, count: 0 },
+      nonControllable: { amount: 0, count: 0 },
+    },
+  );
+  const dashboardNetAmount = dashboardKpis.creditAmount - dashboardKpis.debitAmount;
+  const dashboardNetTone = dashboardNetAmount > 0 ? "positive" : dashboardNetAmount < 0 ? "negative" : "neutral";
+  const dashboardNetArrow = dashboardNetAmount > 0 ? "▲" : dashboardNetAmount < 0 ? "▼" : "•";
+  const dashboardMaxAmount = Math.max(...dashboardChartData.map((item) => item.value), 1);
+  const allDashboardAccountsSelected = dashboardAccountIds.length === 0 || dashboardAccountIds.length === accounts.length;
+  const allDashboardLabelsSelected = dashboardLabelSlugs.length === 0 || dashboardLabelSlugs.length === labels.length;
+  const dashboardAccountSummary =
+    accounts.length === 0
+      ? "No accounts"
+      : allDashboardAccountsSelected
+        ? "All accounts"
+        : `${dashboardAccountIds.length} selected`;
+  const dashboardLabelSummary =
+    labels.length === 0
+      ? "No labels"
+      : allDashboardLabelsSelected
+        ? "All labels"
+        : `${dashboardLabelSlugs.length} selected`;
   const activeAccount = activeAccountId === "" ? null : accounts.find((account) => account.id === activeAccountId) ?? null;
-  const missingMappingFields = REQUIRED_FIELDS.filter((field) => !mappingDraft[field]);
+  const hasPreview = Boolean(preview);
+  const showUploadStep = activeAccountId !== "";
+  const showTemplateStep = hasPreview;
+  const showMappingStep = hasPreview && selectedTemplateId === "new";
+  const showImportReview = Boolean(preparedImport);
+  const selectedTemplate = selectedTemplateId === "new" ? null : templates.find((template) => template.id === selectedTemplateId) ?? null;
+  const hasSplitColumns = Boolean(mappingDraft.debit && mappingDraft.credit);
+  const missingMappingFields = REQUIRED_FIELDS.filter((field) => {
+    if (field === "amount" && transformDraft.amount === "split_amount" && hasSplitColumns) {
+      return false;
+    }
+    if (field === "direction" && transformDraft.direction === "split_amount_direction" && hasSplitColumns) {
+      return false;
+    }
+    return !mappingDraft[field];
+  });
   const importValidationItems = [
     selectedFile ? null : "Choose a source CSV file.",
     activeAccountId === "" ? "Choose the account receiving this import." : null,
@@ -221,7 +453,7 @@ function Home() {
       getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds),
       getDashboardTransactions(selectedMonth, {
         accountIds: dashboardAccountIds,
-        labelSlugs: dashboardLabelSlug ? [dashboardLabelSlug] : [],
+        labelSlugs: dashboardLabelSlugs,
       }),
     ])
       .then(([spendingDashboard, transactionDashboard]) => {
@@ -242,6 +474,44 @@ function Home() {
     const amount = Number(transaction.amount);
     const sign = transaction.direction === "credit" ? "+" : "-";
     return `${sign}$${amount.toFixed(2)}`;
+  }
+
+  function formatCurrency(amount: number): string {
+    return `$${amount.toFixed(2)}`;
+  }
+
+  function toggleDashboardAccount(accountId: number, checked: boolean) {
+    const selectedIds = allDashboardAccountsSelected ? accounts.map((account) => account.id) : dashboardAccountIds;
+    const nextIds = checked ? [...selectedIds, accountId] : selectedIds.filter((id) => id !== accountId);
+    const uniqueIds = Array.from(new Set(nextIds));
+    setDashboardAccountIds(uniqueIds.length === accounts.length ? [] : uniqueIds);
+  }
+
+  function toggleDashboardLabel(labelSlug: string, checked: boolean) {
+    const selectedSlugs = allDashboardLabelsSelected ? labels.map((label) => label.slug) : dashboardLabelSlugs;
+    const nextSlugs = checked ? [...selectedSlugs, labelSlug] : selectedSlugs.filter((slug) => slug !== labelSlug);
+    const uniqueSlugs = Array.from(new Set(nextSlugs));
+    setDashboardLabelSlugs(uniqueSlugs.length === labels.length ? [] : uniqueSlugs);
+  }
+
+  function toggleDashboardSort(key: DashboardSortKey) {
+    setDashboardSort((currentSort) => ({
+      key,
+      direction: currentSort.key === key && currentSort.direction === "asc" ? "desc" : "asc",
+    }));
+  }
+
+  function renderDashboardSortHeader(key: DashboardSortKey) {
+    const isActive = dashboardSort.key === key;
+    const sortLabel = DASHBOARD_SORT_LABELS[key];
+    return (
+      <th scope="col" aria-sort={isActive ? (dashboardSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+        <button type="button" className="sort-button" onClick={() => toggleDashboardSort(key)}>
+          <span>{sortLabel}</span>
+          {isActive ? <b aria-hidden="true">{dashboardSort.direction === "asc" ? "▲" : "▼"}</b> : null}
+        </button>
+      </th>
+    );
   }
 
   function refreshAccounts() {
@@ -325,6 +595,11 @@ function Home() {
       nextMappings[field] = mapping?.source_column ?? "";
       nextTransforms[field] = mapping?.transform ?? DEFAULT_TRANSFORMS[field];
     }
+    const splitMapping = [template.config.mappings.amount, template.config.mappings.direction].find(
+      (mapping) => mapping?.debit_column || mapping?.credit_column,
+    );
+    nextMappings.debit = splitMapping?.debit_column ?? "";
+    nextMappings.credit = splitMapping?.credit_column ?? "";
 
     setTemplateName(template.name);
     setMappingDraft(nextMappings);
@@ -332,17 +607,28 @@ function Home() {
   }
 
   function buildTemplateConfig(): ImportTemplateConfig {
+    const splitColumns = {
+      debit_column: mappingDraft.debit,
+      credit_column: mappingDraft.credit,
+    };
+
     return {
       mappings: {
         date: { source_column: mappingDraft.date, transform: transformDraft.date },
         description: { source_column: mappingDraft.description, transform: transformDraft.description },
-        amount: { source_column: mappingDraft.amount, transform: transformDraft.amount },
-        direction: {
-          source_column: mappingDraft.direction,
-          transform: transformDraft.direction,
-          positive_direction: "credit",
-          negative_direction: "debit",
-        },
+        amount:
+          transformDraft.amount === "split_amount"
+            ? { transform: transformDraft.amount, ...splitColumns }
+            : { source_column: mappingDraft.amount, transform: transformDraft.amount },
+        direction:
+          transformDraft.direction === "split_amount_direction"
+            ? { transform: transformDraft.direction, ...splitColumns }
+            : {
+                source_column: mappingDraft.direction,
+                transform: transformDraft.direction,
+                positive_direction: "credit",
+                negative_direction: "debit",
+              },
       },
     };
   }
@@ -361,7 +647,7 @@ function Home() {
       return;
     }
 
-    const missingField = REQUIRED_FIELDS.find((field) => !mappingDraft[field]);
+    const missingField = missingMappingFields[0];
     if (missingField) {
       setTemplateError(`Map the required ${missingField} field before saving.`);
       return;
@@ -387,11 +673,41 @@ function Home() {
         });
         setSelectedTemplateId(savedTemplate.id);
         setTemplateStatus("Template saved for future imports.");
+        await handlePrepareImport();
       }
     } catch {
       setTemplateError("Could not save that template. Check required mappings and transform settings.");
     } finally {
       setTemplateSaving(false);
+    }
+  }
+
+  async function handlePrepareImport() {
+    setImportError(null);
+    setImportStatus(null);
+    setImportResult(null);
+    if (!selectedFile) {
+      setImportError("Choose a source CSV file before updating the transform preview.");
+      return;
+    }
+    if (activeAccountId === "") {
+      setImportError("Choose the account receiving this import before updating the transform preview.");
+      return;
+    }
+    const missingField = missingMappingFields[0];
+    if (missingField) {
+      setImportError(`Map the required ${missingField} field before updating the transform preview.`);
+      return;
+    }
+    setImportLoading(true);
+    try {
+      const prepared = await prepareImport(selectedFile, activeAccountId, buildTemplateConfig());
+      setPreparedImport(prepared);
+      setImportStatus(`Transform preview updated for ${prepared.row_count} row(s). Review before confirming.`);
+    } catch (error) {
+      setImportError(apiErrorDetail(error) ?? "Could not update transform preview. Check account id, mappings, and transform settings.");
+    } finally {
+      setImportLoading(false);
     }
   }
 
@@ -428,13 +744,41 @@ function Home() {
     }
   }
 
+  async function handleLabelSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLabelRuleStatus(null);
+    setLabelRuleError(null);
+
+    if (!newLabelName.trim()) {
+      setLabelRuleError("Enter a label name.");
+      return;
+    }
+
+    setLabelSaving(true);
+    try {
+      const savedLabel = await createLabel({
+        name: newLabelName,
+        account_id: newLabelAccountId === "" ? null : newLabelAccountId,
+        is_controllable: newLabelIsControllable,
+      });
+      setLabels((currentLabels) => [...currentLabels, savedLabel].sort((first, second) => first.name.localeCompare(second.name)));
+      setLabelRuleLabelId(savedLabel.id);
+      setNewLabelName("");
+      setLabelRuleStatus("Label saved. Add match rules when you are ready.");
+    } catch {
+      setLabelRuleError("Could not save that label. Check for duplicate names with the same scope and control type.");
+    } finally {
+      setLabelSaving(false);
+    }
+  }
+
   async function handleLabelRuleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLabelRuleStatus(null);
     setLabelRuleError(null);
 
     if (!labelRulePattern.trim()) {
-      setLabelRuleError("Enter merchant or description text to match.");
+      setLabelRuleError("Enter description text to match.");
       return;
     }
     if (labelRuleLabelId === "") {
@@ -446,7 +790,8 @@ function Home() {
     try {
       const savedRule = await createLabelRule({
         label_id: labelRuleLabelId,
-        match_field: labelRuleField,
+        match_field: "description",
+        match_type: labelRuleMatchType,
         pattern: labelRulePattern,
       });
       setLabelRules((currentRules) => [...currentRules, savedRule]);
@@ -466,7 +811,7 @@ function Home() {
         <div>
           <p className="app-title">Personal Finance</p>
           <h1>Review monthly transactions</h1>
-          <p className="intro">Move between dashboard review, imports, labeling, and account management without crowding one page.</p>
+          <p className="intro">Start with the month, confirm what changed, then use guided modules for imports, labels, and accounts.</p>
         </div>
         <nav className="app-nav" aria-label="Primary app modules">
           <NavLink to="/" end>Dashboard</NavLink>
@@ -481,45 +826,54 @@ function Home() {
         <div className="dashboard-header">
           <div>
             <h2 id="dashboard-heading">Monthly transaction review</h2>
+            <p className="dashboard-help">Filter first, then scan transactions. Spending totals stay secondary.</p>
           </div>
           <label className="month-picker">
-            <span>Dashboard month</span>
+            <span>Month</span>
             <input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
           </label>
-          <label className="account-filter">
-            <span>Dashboard accounts</span>
-            <select
-              aria-label="Dashboard accounts"
-              multiple
-              value={dashboardAccountIds.map(String)}
-              onChange={(event) => {
-                const values = Array.from(event.target.selectedOptions, (option) => Number(option.value));
-                setDashboardAccountIds(values);
-              }}
-            >
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
-            <small>Leave blank for all accounts.</small>
-          </label>
-          <label className="label-filter">
-            <span>Dashboard label</span>
-            <select
-              aria-label="Dashboard label"
-              value={dashboardLabelSlug}
-              onChange={(event) => setDashboardLabelSlug(event.target.value)}
-            >
-              <option value="">All labels</option>
-              {labels.map((label) => (
-                <option key={label.id} value={label.slug}>
-                  {label.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="account-filter">
+            <span>Accounts</span>
+            <details className="account-dropdown">
+              <summary aria-label="Accounts">{dashboardAccountSummary}</summary>
+              <div className="account-dropdown-menu" role="group" aria-label="Account options">
+                <button type="button" onClick={() => setDashboardAccountIds([])}>
+                  Select all accounts
+                </button>
+                {accounts.map((account) => (
+                  <label key={account.id}>
+                    <input
+                      type="checkbox"
+                      checked={allDashboardAccountsSelected || dashboardAccountIds.includes(account.id)}
+                      onChange={(event) => toggleDashboardAccount(account.id, event.target.checked)}
+                    />
+                    <span>{account.name}</span>
+                  </label>
+                ))}
+              </div>
+            </details>
+          </div>
+          <div className="label-filter">
+            <span>Labels</span>
+            <details className="account-dropdown">
+              <summary aria-label="Labels">{dashboardLabelSummary}</summary>
+              <div className="account-dropdown-menu" role="group" aria-label="Label options">
+                <button type="button" onClick={() => setDashboardLabelSlugs([])}>
+                  Select all labels
+                </button>
+                {labels.map((label) => (
+                  <label key={label.id}>
+                    <input
+                      type="checkbox"
+                      checked={allDashboardLabelsSelected || dashboardLabelSlugs.includes(label.slug)}
+                      onChange={(event) => toggleDashboardLabel(label.slug, event.target.checked)}
+                    />
+                    <span>{label.name}{label.account_name ? ` (${label.account_name})` : ""}</span>
+                  </label>
+                ))}
+              </div>
+            </details>
+          </div>
         </div>
         {dashboardError ? <p className="preview-error">{dashboardError}</p> : null}
         {dashboardLoading ? (
@@ -528,6 +882,38 @@ function Home() {
           <div className="dashboard-empty">No transactions available for {selectedMonth} and selected filters.</div>
         ) : (
           <div className="dashboard-transactions">
+            <div className="dashboard-kpis" aria-label="Credit and debit summary">
+              <article>
+                <span>Debit activity</span>
+                <strong>{formatCurrency(dashboardKpis.debitAmount)}</strong>
+                <em>{dashboardKpis.debitCount} debit row(s)</em>
+              </article>
+              <article>
+                <span>Credit activity</span>
+                <strong>{formatCurrency(dashboardKpis.creditAmount)}</strong>
+                <em>{dashboardKpis.creditCount} credit row(s)</em>
+                <div className="credit-split" aria-label="Credit activity split">
+                  <div>
+                    <span>Controllable</span>
+                    <b>{formatCurrency(dashboardKpis.controllable.amount)}</b>
+                    <em>{dashboardKpis.controllable.count} row(s)</em>
+                  </div>
+                  <div>
+                    <span>Non-controllable</span>
+                    <b>{formatCurrency(dashboardKpis.nonControllable.amount)}</b>
+                    <em>{dashboardKpis.nonControllable.count} row(s)</em>
+                  </div>
+                </div>
+              </article>
+              <article>
+                <span>Net activity</span>
+                <strong className={`net-${dashboardNetTone}`}>
+                  <b aria-hidden="true">{dashboardNetArrow}</b>
+                  {formatCurrency(Math.abs(dashboardNetAmount))}
+                </strong>
+                <em>credits minus debits</em>
+              </article>
+            </div>
             <div className="dashboard-table-header">
               <h3>Transactions</h3>
               <span>{dashboardTransactions.length} row(s)</span>
@@ -536,16 +922,16 @@ function Home() {
               <table className="transaction-table">
                 <thead>
                   <tr>
-                    <th scope="col">Date</th>
-                    <th scope="col">Account</th>
-                    <th scope="col">Description</th>
-                    <th scope="col">Label</th>
-                    <th scope="col">Direction</th>
-                    <th scope="col">Amount</th>
+                    {renderDashboardSortHeader("date")}
+                    {renderDashboardSortHeader("account")}
+                    {renderDashboardSortHeader("description")}
+                    {renderDashboardSortHeader("label")}
+                    {renderDashboardSortHeader("direction")}
+                    {renderDashboardSortHeader("amount")}
                   </tr>
                 </thead>
                 <tbody>
-                  {dashboardTransactions.map((transaction) => (
+                  {sortedDashboardTransactions.map((transaction) => (
                     <tr key={transaction.id}>
                       <td>{transaction.transaction_date}</td>
                       <td>{transaction.account.name}</td>
@@ -565,18 +951,22 @@ function Home() {
         )}
         {filteredDashboardLabels.length === 0 ? null : (
           <div className="dashboard-grid">
-            <div className="chart-card" aria-label="Spending by label pie chart">
+            <div className="chart-card" aria-label="Spending by label summary">
               <h3>Spending summary</h3>
-              <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <Pie data={dashboardChartData} dataKey="value" nameKey="name" innerRadius={70} outerRadius={110} paddingAngle={3}>
-                    {dashboardChartData.map((item, index) => (
-                      <Cell key={item.name} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => `$${Number(value).toFixed(2)}`} />
-                </PieChart>
-              </ResponsiveContainer>
+              <div className="spending-bars">
+                {dashboardChartData.map((item, index) => (
+                  <div key={item.name}>
+                    <span>{item.name}</span>
+                    <i
+                      aria-hidden="true"
+                      style={{
+                        background: CHART_COLORS[index % CHART_COLORS.length],
+                        inlineSize: `${Math.max((item.value / dashboardMaxAmount) * 100, 4)}%`,
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
               <strong>Total debit spending: ${dashboardTotal.toFixed(2)}</strong>
             </div>
             <div className="dashboard-legend" aria-label="Spending by label totals">
@@ -671,8 +1061,12 @@ function Home() {
             value={activeAccountId}
             onChange={(event) => {
               setActiveAccountId(event.target.value ? Number(event.target.value) : "");
+              setSelectedFile(null);
+              setPreview(null);
+              setPreviewError(null);
               setPreparedImport(null);
               setImportResult(null);
+              setImportStatus(null);
             }}
           >
             <option value="">Choose account</option>
@@ -684,7 +1078,8 @@ function Home() {
           </select>
           <small>Templates shown below are tied to this account.</small>
         </label>
-        <form className="upload-form" onSubmit={handlePreviewSubmit}>
+        {showUploadStep ? (
+        <form className="upload-form progressive-step" onSubmit={handlePreviewSubmit}>
           <label className="file-picker">
             <span>Statement CSV</span>
             <input
@@ -704,25 +1099,50 @@ function Home() {
             />
           </label>
           <button type="submit" disabled={previewLoading}>
-            {previewLoading ? "Parsing..." : "Preview CSV"}
+            {previewLoading ? "Uploading..." : "Upload"}
           </button>
         </form>
+        ) : null}
         {previewError ? <p className="preview-error">{previewError}</p> : null}
         {preview ? (
           <div className="preview-results">
-            <div>
-              <h3>Source Columns</h3>
-              <div className="column-list" aria-label="Source columns">
-                {preview.source_columns.map((column) => (
-                  <span key={column}>{column}</span>
-                ))}
+            <section className="csv-preview" aria-labelledby="csv-preview-heading">
+              <div className="section-header-row">
+                <div>
+                  <h3 id="csv-preview-heading">CSV preview</h3>
+                  <p>Uploaded rows appear here before mappings or imports run.</p>
+                </div>
+                <span>{preview.rows.length} preview row(s)</span>
               </div>
-            </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      {preview.headers.map((header) => (
+                        <th key={header} scope="col">
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.rows.map((row, index) => (
+                      <tr key={index}>
+                        {preview.headers.map((header) => (
+                          <td key={header}>{row[header] ?? ""}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            {showTemplateStep ? (
             <form className="template-editor" onSubmit={handleTemplateSubmit}>
               <div className="template-editor-header">
                 <div>
                   <h3>Import Template</h3>
-                  <p>Map required transaction fields before generating transformed previews.</p>
+                  <p>Choose an existing account template, or add a new one when this CSV layout is unfamiliar.</p>
                 </div>
                 <label>
                   <span>Template</span>
@@ -733,6 +1153,9 @@ function Home() {
                       setSelectedTemplateId(value);
                       setTemplateStatus(null);
                       setTemplateError(null);
+                      setPreparedImport(null);
+                      setImportResult(null);
+                      setImportStatus(null);
                       if (value === "new") {
                         setTemplateName("");
                         setMappingDraft(createEmptyMappings());
@@ -754,15 +1177,23 @@ function Home() {
                   </select>
                 </label>
               </div>
-              <label className="template-name">
-                <span>Template name</span>
-                <input
-                  value={templateName}
-                  onChange={(event) => setTemplateName(event.target.value)}
-                  placeholder="Checking account export"
-                />
-              </label>
-              <div className="mapping-grid">
+              {selectedTemplate ? (
+                <div className="selected-template-summary">
+                  <strong>{selectedTemplate.name}</strong>
+                  <span>Template ready. Update transform preview to inspect normalized rows before import.</span>
+                </div>
+              ) : null}
+              {showMappingStep ? (
+              <div className="mapping-section">
+                <label className="template-name">
+                  <span>Template name</span>
+                  <input
+                    value={templateName}
+                    onChange={(event) => setTemplateName(event.target.value)}
+                    placeholder="Checking account export"
+                  />
+                </label>
+                <div className="mapping-grid">
                 {REQUIRED_FIELDS.map((field) => (
                   <div className="mapping-row" key={field}>
                     <strong>{field}</strong>
@@ -770,9 +1201,12 @@ function Home() {
                       <span>Source column</span>
                       <select
                         value={mappingDraft[field]}
-                        onChange={(event) =>
-                          setMappingDraft((current) => ({ ...current, [field]: event.target.value }))
-                        }
+                        onChange={(event) => {
+                          setMappingDraft((current) => ({ ...current, [field]: event.target.value }));
+                          setPreparedImport(null);
+                          setImportResult(null);
+                          setImportStatus(null);
+                        }}
                       >
                         <option value="">Choose column</option>
                         {preview.source_columns.map((column) => (
@@ -786,34 +1220,76 @@ function Home() {
                       <span>Transform</span>
                       <select
                         value={transformDraft[field]}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setTransformDraft((current) => ({
                             ...current,
                             [field]: event.target.value as TemplateTransform,
-                          }))
-                        }
+                          }));
+                          setPreparedImport(null);
+                          setImportResult(null);
+                          setImportStatus(null);
+                        }}
                       >
                         <option value="copy_column">copy column</option>
                         <option value="parse_date">parse date</option>
                         <option value="parse_numeric">parse numeric</option>
                         <option value="absolute_numeric">absolute numeric</option>
+                        <option value="split_amount">split amount</option>
                         <option value="signed_amount_direction">signed amount direction</option>
+                        <option value="split_amount_direction">split amount direction</option>
                       </select>
                     </label>
                   </div>
                 ))}
+                {OPTIONAL_SPLIT_FIELDS.map((field) => (
+                  <div className="mapping-row" key={field}>
+                    <strong>{field}</strong>
+                    <label>
+                      <span>Source column</span>
+                      <select
+                        value={mappingDraft[field]}
+                        onChange={(event) => {
+                          setMappingDraft((current) => ({ ...current, [field]: event.target.value }));
+                          setPreparedImport(null);
+                          setImportResult(null);
+                          setImportStatus(null);
+                        }}
+                      >
+                        <option value="">Optional column</option>
+                        {preview.source_columns.map((column) => (
+                          <option key={column} value={column}>
+                            {column}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <span className="template-note">Used by split amount and split amount direction.</span>
+                  </div>
+                ))}
+                </div>
+                <p className="template-note">For split debit/credit files, set debit and credit optional columns, amount transform to split amount, and direction transform to split amount direction. Amount source may stay empty.</p>
               </div>
-              <p className="template-note">Signed amount direction saves positive as credit and negative as debit.</p>
+              ) : null}
               {templateError ? <p className="preview-error">{templateError}</p> : null}
               {templateStatus ? <p className="template-status">{templateStatus}</p> : null}
-              <button type="submit" disabled={templateSaving}>
-                {templateSaving ? "Saving..." : selectedTemplateId === "new" ? "Save Template" : "Update Template"}
-              </button>
+              <div className="import-actions">
+                {showMappingStep ? (
+                  <button type="submit" disabled={templateSaving}>
+                    {templateSaving ? "Saving..." : "Save Template"}
+                  </button>
+                ) : null}
+                <button type="button" disabled={importLoading || importValidationItems.length > 0} onClick={handlePrepareImport}>
+                  {importLoading ? "Updating..." : "Update transform preview"}
+                </button>
+              </div>
+              {importError ? <p className="preview-error">{importError}</p> : null}
             </form>
+            ) : null}
+            {showImportReview ? (
             <div className="import-confirmation" aria-label="Import confirmation">
               <div>
                 <h3>Transformed Preview</h3>
-                <p>Prepare normalized rows for {activeAccount?.name ?? "the selected account"} before confirming import.</p>
+                <p>Normalized rows for {activeAccount?.name ?? "the selected account"}. Confirm only after dates, amounts, and directions look right.</p>
               </div>
               {importValidationItems.length > 0 ? (
                 <div className="import-validation" aria-label="Import requirements">
@@ -826,40 +1302,6 @@ function Home() {
                 </div>
               ) : null}
               <div className="import-actions">
-                <button
-                  type="button"
-                  disabled={importLoading || !selectedFile}
-                  onClick={async () => {
-                    setImportError(null);
-                    setImportStatus(null);
-                    setImportResult(null);
-                    if (!selectedFile) {
-                      setImportError("Choose a source CSV file before preparing import.");
-                      return;
-                    }
-                    if (activeAccountId === "") {
-                      setImportError("Choose the account receiving this import before preparing import.");
-                      return;
-                    }
-                    const missingField = REQUIRED_FIELDS.find((field) => !mappingDraft[field]);
-                    if (missingField) {
-                      setImportError(`Map the required ${missingField} field before preparing import.`);
-                      return;
-                    }
-                    setImportLoading(true);
-                    try {
-                      const prepared = await prepareImport(selectedFile, activeAccountId, buildTemplateConfig());
-                      setPreparedImport(prepared);
-                      setImportStatus(`Prepared ${prepared.row_count} row(s). Review transformed preview before confirming.`);
-                    } catch {
-                      setImportError("Could not prepare import. Check account id, mappings, and transform settings.");
-                    } finally {
-                      setImportLoading(false);
-                    }
-                  }}
-                >
-                  {importLoading ? "Preparing..." : "Prepare Import"}
-                </button>
                 <button
                   type="button"
                   disabled={importLoading || !preparedImport}
@@ -888,7 +1330,6 @@ function Home() {
                   {importLoading ? "Confirming..." : "Confirm Import"}
                 </button>
               </div>
-              {importError ? <p className="preview-error">{importError}</p> : null}
               {importStatus ? <p className="template-status">{importStatus}</p> : null}
               {importResult && importResult.inserted_count > 0 ? (
                 <Link
@@ -897,7 +1338,7 @@ function Home() {
                   onClick={() => {
                     setSelectedMonth(reviewMonth);
                     setDashboardAccountIds(activeAccountId === "" ? [] : [activeAccountId]);
-                    setDashboardLabelSlug("");
+                    setDashboardLabelSlugs([]);
                   }}
                 >
                   Review {formatMonthLabel(reviewMonth)} imports on dashboard
@@ -934,28 +1375,13 @@ function Home() {
                 </div>
               ) : null}
             </div>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    {preview.headers.map((header) => (
-                      <th key={header} scope="col">
-                        {header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.rows.map((row, index) => (
-                    <tr key={index}>
-                      {preview.headers.map((header) => (
-                        <td key={header}>{row[header] ?? ""}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            ) : null}
+            {!showImportReview ? (
+              <div className="import-next-step" role="status">
+                <strong>Next: update transform preview</strong>
+                <span>That step validates mappings, checks duplicate candidates, and creates the upload id needed for confirm.</span>
+              </div>
+            ) : null}
           </div>
         ) : null}
         </>
@@ -964,36 +1390,87 @@ function Home() {
         )} />
         <Route path="/labeling" element={(
           <section className="label-panel" aria-labelledby="label-heading">
-        <h2 id="label-heading">Transaction labeling rules</h2>
+        <h2 id="label-heading">Transaction labels and rules</h2>
         <p className="label-intro">
-          Assign fixed labels by matching merchant or description text. Custom labels are not available in the MVP;
-          unmatched transactions stay uncategorized.
+          Create global or account-specific labels, then match transactions with plain text or regex. Preview is debounced and limited to keep large tables responsive.
         </p>
-        <form className="label-rule-form" onSubmit={handleLabelRuleSubmit}>
+        <section className="label-section" aria-labelledby="create-label-heading">
+        <div className="label-section-header">
+          <h3 id="create-label-heading">Create label</h3>
+          <p>Global labels apply everywhere. Account labels keep overloaded categories separate.</p>
+        </div>
+        <form className="label-rule-form label-create-form" onSubmit={handleLabelSubmit}>
           <label>
-            <span>Match field</span>
-            <select value={labelRuleField} onChange={(event) => setLabelRuleField(event.target.value as "merchant" | "description")}>
-              <option value="description">Description</option>
-              <option value="merchant">Merchant</option>
+            <span>Label name</span>
+            <input value={newLabelName} onChange={(event) => setNewLabelName(event.target.value)} placeholder="Loan Payment" />
+          </label>
+          <label>
+            <span>Label scope</span>
+            <select value={newLabelAccountId} onChange={(event) => setNewLabelAccountId(event.target.value ? Number(event.target.value) : "")}>
+              <option value="">Global</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>{account.name}</option>
+              ))}
             </select>
           </label>
           <label>
-            <span>Match text</span>
+            <span>Control type</span>
+            <select value={newLabelIsControllable ? "controllable" : "non-controllable"} onChange={(event) => setNewLabelIsControllable(event.target.value === "controllable")}>
+              <option value="controllable">Controllable</option>
+              <option value="non-controllable">Non-controllable</option>
+            </select>
+          </label>
+          <button type="submit" disabled={labelSaving}>{labelSaving ? "Saving..." : "Save Label"}</button>
+        </form>
+        <div className="label-pill-summary" aria-label="Current labels">
+          <div className="label-legend" aria-label="Label controllability legend">
+            <span><i className="legend-dot controllable" />Controllable</span>
+            <span><i className="legend-dot non-controllable" />Non-controllable</span>
+          </div>
+          {labelsByScope.map((group) => (
+            <div className="label-scope-group" key={group.scope}>
+              <strong>{group.scope}</strong>
+              <div className="label-pill-list">
+                {group.labels.map((label) => (
+                  <span className={`label-pill ${label.is_controllable ? "controllable" : "non-controllable"}`} key={label.id}>
+                    {label.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        </section>
+        <section className="label-section" aria-labelledby="create-rule-heading">
+        <div className="label-section-header">
+          <h3 id="create-rule-heading">Create match rule</h3>
+          <p>Rules always match transaction descriptions. Scope comes from the selected label.</p>
+        </div>
+        <form className="label-rule-form label-match-form" onSubmit={handleLabelRuleSubmit}>
+          <label>
+            <span>Match type</span>
+            <select value={labelRuleMatchType} onChange={(event) => setLabelRuleMatchType(event.target.value as "contains" | "regex")}>
+              <option value="contains">Contains</option>
+              <option value="regex">Regex</option>
+            </select>
+          </label>
+          <label>
+            <span>Match pattern</span>
             <input
               value={labelRulePattern}
               onChange={(event) => setLabelRulePattern(event.target.value)}
-              placeholder="Target, Payroll, Netflix"
+              placeholder={labelRuleMatchType === "regex" ? "^SAFEWAY(?! GAS)" : "Target, Payroll, Netflix"}
             />
           </label>
           <label>
-            <span>Fixed label</span>
+            <span>Label</span>
             <select
               value={labelRuleLabelId}
               onChange={(event) => setLabelRuleLabelId(event.target.value ? Number(event.target.value) : "")}
             >
               {labels.map((label) => (
                 <option key={label.id} value={label.id}>
-                  {label.name}
+                  {label.name}{label.account_name ? ` (${label.account_name})` : ""}
                 </option>
               ))}
             </select>
@@ -1002,6 +1479,34 @@ function Home() {
             {labelRuleSaving ? "Saving..." : "Save Label Rule"}
           </button>
         </form>
+        </section>
+        <div className="match-preview" aria-live="polite">
+          <div>
+            <strong>Pattern preview</strong>
+            <span>{labelMatchPreviewLoading ? "Checking matches..." : labelMatchPreview ? `${labelMatchPreview.total_count} match(es), showing ${labelMatchPreview.returned_count}` : "Type at least 2 characters to preview matches."}</span>
+          </div>
+          {labelMatchPreviewError ? <p className="preview-error">{labelMatchPreviewError}</p> : null}
+          {labelMatchPreview?.rows.length ? (
+            <div className="match-preview-table">
+              <table>
+                <thead>
+                  <tr><th>Date</th><th>Account</th><th>Description</th><th>Current label</th><th>Amount</th></tr>
+                </thead>
+                <tbody>
+                  {labelMatchPreview.rows.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.transaction_date}</td>
+                      <td>{row.account_name}</td>
+                      <td>{row.description}</td>
+                      <td>{row.label_name ?? "Uncategorized"}</td>
+                      <td>{row.direction === "credit" ? "+" : "-"}${row.amount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </div>
         {labelRuleError ? <p className="preview-error">{labelRuleError}</p> : null}
         {labelRuleStatus ? <p className="template-status">{labelRuleStatus}</p> : null}
         <div className="rule-list" aria-label="Existing label rules">
@@ -1009,7 +1514,8 @@ function Home() {
           {labelRules.map((rule) => (
             <article key={rule.id}>
               <strong>{rule.label_name}</strong>
-              <span>{rule.match_field} contains "{rule.pattern}"</span>
+              <span>{rule.account_name ?? "Global rule"} - description {rule.match_type === "regex" ? "matches regex" : "contains"} "{rule.pattern}"</span>
+              <span>{rule.label_is_controllable ? "Controllable" : "Non-controllable"}</span>
             </article>
           ))}
         </div>

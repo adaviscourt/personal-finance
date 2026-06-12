@@ -180,7 +180,7 @@ def test_dashboard_transaction_list_returns_month_rows_with_display_fields() -> 
         "account": {"id": account.id, "name": account.name},
         "description": "Local Market",
         "merchant": "Market Co",
-        "label": {"id": label_id("groceries"), "slug": "groceries", "name": "Groceries"},
+        "label": {"id": label_id("groceries"), "slug": "groceries", "name": "Groceries", "is_controllable": True},
         "direction": "debit",
         "amount": "10.50",
         "source_type": "Card",
@@ -219,11 +219,12 @@ def test_dashboard_transaction_list_filters_uncategorized_rows() -> None:
     assert response.status_code == 200
     transactions = response.json()["transactions"]
     assert [transaction["description"] for transaction in transactions] == ["No label", "Explicit uncategorized"]
-    assert transactions[0]["label"] == {"id": None, "slug": "uncategorized", "name": "Uncategorized"}
+    assert transactions[0]["label"] == {"id": None, "slug": "uncategorized", "name": "Uncategorized", "is_controllable": True}
     assert transactions[1]["label"] == {
         "id": label_id("uncategorized"),
         "slug": "uncategorized",
         "name": "Uncategorized",
+        "is_controllable": True,
     }
 
 

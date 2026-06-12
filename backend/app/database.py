@@ -12,16 +12,16 @@ from app.config import settings
 
 
 LABEL_TAXONOMY = (
-    ("uncategorized", "Uncategorized"),
-    ("housing", "Housing"),
-    ("auto", "Auto"),
-    ("groceries", "Groceries"),
-    ("paychecks", "Paychecks"),
-    ("life", "Life"),
-    ("utilities", "Utilities"),
-    ("dining", "Dining"),
-    ("subscriptions", "Subscriptions"),
-    ("transfers", "Transfers"),
+    ("uncategorized", "Uncategorized", True),
+    ("housing", "Housing", False),
+    ("auto", "Auto", True),
+    ("groceries", "Groceries", True),
+    ("paychecks", "Paychecks", False),
+    ("life", "Life", True),
+    ("utilities", "Utilities", True),
+    ("dining", "Dining", True),
+    ("subscriptions", "Subscriptions", True),
+    ("transfers", "Transfers", False),
 )
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -75,8 +75,10 @@ class Label(SQLModel, table=True):
     __tablename__ = "labels"
 
     id: int | None = Field(default=None, primary_key=True)
+    account_id: int | None = Field(default=None, foreign_key="accounts.id", index=True)
     slug: str = Field(index=True, unique=True, max_length=60)
     name: str = Field(max_length=120)
+    is_controllable: bool = Field(default=True)
     is_system: bool = Field(default=True)
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -111,7 +113,9 @@ class TransactionLabelRule(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     label_id: int = Field(foreign_key="labels.id", index=True)
+    account_id: int | None = Field(default=None, foreign_key="accounts.id", index=True)
     match_field: str = Field(index=True, max_length=20)
+    match_type: str = Field(default="contains", index=True, max_length=20)
     pattern: str = Field(index=True)
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -143,8 +147,30 @@ def enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
 
 def init_db(database_engine=engine) -> None:
     SQLModel.metadata.create_all(database_engine)
+    migrate_schema(database_engine)
     create_schema_indexes(database_engine)
     seed_labels(database_engine)
+
+
+def migrate_schema(database_engine=engine) -> None:
+    migrations = {
+        "labels": (
+            ("account_id", "ALTER TABLE labels ADD COLUMN account_id INTEGER REFERENCES accounts(id)"),
+            ("is_controllable", "ALTER TABLE labels ADD COLUMN is_controllable BOOLEAN NOT NULL DEFAULT 1"),
+        ),
+        "transaction_label_rules": (
+            ("account_id", "ALTER TABLE transaction_label_rules ADD COLUMN account_id INTEGER REFERENCES accounts(id)"),
+            ("match_type", "ALTER TABLE transaction_label_rules ADD COLUMN match_type VARCHAR(20) NOT NULL DEFAULT 'contains'"),
+        ),
+    }
+
+    with Session(database_engine) as session:
+        for table_name, table_migrations in migrations.items():
+            existing_columns = {row[1] for row in session.exec(text(f"PRAGMA table_info({table_name})")).all()}
+            for column_name, statement in table_migrations:
+                if column_name not in existing_columns:
+                    session.exec(text(statement))
+        session.commit()
 
 
 def create_schema_indexes(database_engine=engine) -> None:
@@ -153,6 +179,8 @@ def create_schema_indexes(database_engine=engine) -> None:
         "CREATE INDEX IF NOT EXISTS ix_transactions_duplicate_detection ON transactions (account_id, transaction_date, normalized_description, amount, direction)",
         "CREATE INDEX IF NOT EXISTS ix_transactions_dashboard_month ON transactions (transaction_month, direction, label_id)",
         "CREATE INDEX IF NOT EXISTS ix_label_rules_matching ON transaction_label_rules (match_field, pattern)",
+        "CREATE INDEX IF NOT EXISTS ix_label_rules_account_matching ON transaction_label_rules (account_id, match_field, match_type)",
+        "CREATE INDEX IF NOT EXISTS ix_labels_account ON labels (account_id, name)",
     )
 
     with Session(database_engine) as session:
@@ -163,10 +191,13 @@ def create_schema_indexes(database_engine=engine) -> None:
 
 def seed_labels(database_engine=engine) -> None:
     with Session(database_engine) as session:
-        for slug, name in LABEL_TAXONOMY:
+        for slug, name, is_controllable in LABEL_TAXONOMY:
             existing_label = session.exec(select(Label).where(Label.slug == slug)).first()
             if existing_label is None:
-                session.add(Label(slug=slug, name=name))
+                session.add(Label(slug=slug, name=name, is_controllable=is_controllable))
+            elif existing_label.is_system:
+                existing_label.is_controllable = is_controllable
+                session.add(existing_label)
         session.commit()
 
 

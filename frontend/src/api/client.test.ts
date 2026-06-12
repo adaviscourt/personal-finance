@@ -61,10 +61,10 @@ describe("api client", () => {
 
   it("keeps account and label list clients available for dashboard/module selectors", async () => {
     mockGet.mockResolvedValueOnce({ data: [{ id: 1, name: "Checking" }] });
-    mockGet.mockResolvedValueOnce({ data: [{ id: 2, slug: "groceries", name: "Groceries" }] });
+    mockGet.mockResolvedValueOnce({ data: [{ id: 2, slug: "groceries", name: "Groceries", account_id: null, is_controllable: true }] });
 
     await expect(listAccounts()).resolves.toEqual([{ id: 1, name: "Checking" }]);
-    await expect(listLabels()).resolves.toEqual([{ id: 2, slug: "groceries", name: "Groceries" }]);
+    await expect(listLabels()).resolves.toEqual([{ id: 2, slug: "groceries", name: "Groceries", account_id: null, is_controllable: true }]);
 
     expect(mockGet).toHaveBeenNthCalledWith(1, "/accounts");
     expect(mockGet).toHaveBeenNthCalledWith(2, "/labels");
