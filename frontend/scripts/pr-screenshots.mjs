@@ -36,8 +36,8 @@ const apiFixtures = {
     { id: 3, name: "Dining", slug: "dining" },
   ],
   "/transaction-label-rules": [
-    { id: 1, field: "description", pattern: "market", label_id: 1, label_name: "Groceries" },
-    { id: 2, field: "merchant", pattern: "electric", label_id: 2, label_name: "Utilities" },
+    { id: 1, match_field: "description", pattern: "market", label_id: 1, label_slug: "groceries", label_name: "Groceries", created_at: "2026-01-01T00:00:00Z" },
+    { id: 2, match_field: "merchant", pattern: "electric", label_id: 2, label_slug: "utilities", label_name: "Utilities", created_at: "2026-01-01T00:00:00Z" },
   ],
   "/import-templates": [
     { id: 1, name: "Local Bank CSV", account_id: 1, config: { mappings: {} }, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
@@ -45,16 +45,16 @@ const apiFixtures = {
   "/dashboard/spending-by-label": {
     month: "2026-06",
     labels: [
-      { label_id: 1, label_name: "Groceries", amount: "412.18", transaction_count: 12 },
-      { label_id: 2, label_name: "Utilities", amount: "186.44", transaction_count: 4 },
-      { label_id: 3, label_name: "Dining", amount: "143.90", transaction_count: 7 },
+      { label_slug: "groceries", label_name: "Groceries", amount: "412.18", transaction_count: 12 },
+      { label_slug: "utilities", label_name: "Utilities", amount: "186.44", transaction_count: 4 },
+      { label_slug: "dining", label_name: "Dining", amount: "143.90", transaction_count: 7 },
     ],
   },
   "/dashboard/transactions": {
     month: "2026-06",
     transactions: [
-      { id: 1, date: "2026-06-02", description: "Neighborhood Market", merchant: "Neighborhood Market", amount: "84.21", direction: "debit", account: { id: 1, name: "Checking" }, labels: [{ id: 1, name: "Groceries", slug: "groceries" }] },
-      { id: 2, date: "2026-06-05", description: "Electric Utility", merchant: "Electric Utility", amount: "126.10", direction: "debit", account: { id: 1, name: "Checking" }, labels: [{ id: 2, name: "Utilities", slug: "utilities" }] },
+      { id: 1, transaction_date: "2026-06-02", description: "Neighborhood Market", merchant: "Neighborhood Market", amount: "84.21", direction: "debit", account: { id: 1, name: "Checking" }, label: { id: 1, name: "Groceries", slug: "groceries" }, source_type: null, source_category: null, check_number: null },
+      { id: 2, transaction_date: "2026-06-05", description: "Electric Utility", merchant: "Electric Utility", amount: "126.10", direction: "debit", account: { id: 1, name: "Checking" }, label: { id: 2, name: "Utilities", slug: "utilities" }, source_type: null, source_category: null, check_number: null },
     ],
   },
 };

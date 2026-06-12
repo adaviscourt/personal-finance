@@ -20,6 +20,7 @@ export type TemplateTransform =
   | "parse_date"
   | "parse_numeric"
   | "absolute_numeric"
+  | "split_amount"
   | "signed_amount_direction"
   | "split_amount_direction"
   | "value_lookup";
@@ -103,6 +104,15 @@ export type TransactionLabel = {
   id: number;
   slug: string;
   name: string;
+  account_id: number | null;
+  account_name?: string | null;
+  is_controllable: boolean;
+};
+
+export type TransactionLabelPayload = {
+  name: string;
+  account_id?: number | null;
+  is_controllable: boolean;
 };
 
 export type LabelRule = {
@@ -110,7 +120,12 @@ export type LabelRule = {
   label_id: number;
   label_slug: string;
   label_name: string;
+  label_account_id: number | null;
+  label_is_controllable: boolean;
+  account_id: number | null;
+  account_name?: string | null;
   match_field: "merchant" | "description";
+  match_type: "contains" | "regex";
   pattern: string;
   created_at: string;
   applied_count?: number | null;
@@ -118,8 +133,26 @@ export type LabelRule = {
 
 export type LabelRulePayload = {
   label_id: number;
-  match_field: "merchant" | "description";
+  match_field?: "description";
+  match_type: "contains" | "regex";
   pattern: string;
+};
+
+export type LabelRuleMatchPreviewRow = {
+  id: number;
+  transaction_date: string;
+  account_name: string;
+  description: string;
+  merchant: string | null;
+  label_name: string | null;
+  amount: string;
+  direction: "debit" | "credit";
+};
+
+export type LabelRuleMatchPreview = {
+  total_count: number;
+  returned_count: number;
+  rows: LabelRuleMatchPreviewRow[];
 };
 
 export type DashboardSpendingLabel = {
@@ -142,6 +175,7 @@ export type DashboardTransactionLabel = {
   id: number | null;
   slug: string;
   name: string;
+  is_controllable: boolean;
 };
 
 export type DashboardTransactionRow = {
@@ -276,6 +310,11 @@ export async function listLabels(): Promise<TransactionLabel[]> {
   return response.data;
 }
 
+export async function createLabel(payload: TransactionLabelPayload): Promise<TransactionLabel> {
+  const response = await api.post<TransactionLabel>("/labels", payload);
+  return response.data;
+}
+
 export async function listLabelRules(): Promise<LabelRule[]> {
   const response = await api.get<LabelRule[]>("/transaction-label-rules");
   return response.data;
@@ -283,6 +322,19 @@ export async function listLabelRules(): Promise<LabelRule[]> {
 
 export async function createLabelRule(payload: LabelRulePayload): Promise<LabelRule> {
   const response = await api.post<LabelRule>("/transaction-label-rules", payload);
+  return response.data;
+}
+
+export async function previewLabelRuleMatches(payload: LabelRulePayload, limit = 25): Promise<LabelRuleMatchPreview> {
+  const response = await api.get<LabelRuleMatchPreview>("/transaction-label-rules/matches", {
+    params: {
+      match_field: payload.match_field,
+      match_type: payload.match_type,
+      pattern: payload.pattern,
+      label_id: payload.label_id || undefined,
+      limit,
+    },
+  });
   return response.data;
 }
 

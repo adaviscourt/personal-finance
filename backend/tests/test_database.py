@@ -41,7 +41,7 @@ def test_init_db_seeds_fixed_labels_idempotently(tmp_path) -> None:
         labels = session.exec(select(Label).order_by(Label.slug)).all()
 
     expected_labels = sorted(LABEL_TAXONOMY)
-    assert [(label.slug, label.name) for label in labels] == expected_labels
+    assert [(label.slug, label.name, label.is_controllable) for label in labels] == expected_labels
     assert any(label.slug == "uncategorized" for label in labels)
 
 
