@@ -535,6 +535,7 @@ button,
 
 .dashboard-kpis article {
   display: grid;
+  align-content: start;
   gap: 7px;
   padding: 14px 16px;
   border: 1px solid var(--border);
@@ -567,20 +568,17 @@ button,
 
 .credit-split {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  margin-top: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--border);
-  overflow: hidden;
+  gap: 6px;
+  margin-top: 5px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
 }
 
 .credit-split div {
   display: grid;
-  gap: 4px;
-  padding: 9px 10px;
-  background: var(--surface);
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: baseline;
 }
 
 .credit-split span,
@@ -588,9 +586,13 @@ button,
   font-size: 0.74rem;
 }
 
+.credit-split span {
+  min-width: 0;
+}
+
 .credit-split b {
   color: var(--ink);
-  font-size: 0.95rem;
+  font-size: 0.86rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
