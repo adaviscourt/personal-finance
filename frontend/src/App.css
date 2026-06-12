@@ -527,7 +527,7 @@ button,
 
 .dashboard-kpis {
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
   gap: 12px;
 }
 
@@ -549,10 +549,30 @@ button,
 }
 
 .dashboard-kpis strong {
+  display: flex;
+  gap: 8px;
+  align-items: center;
   color: var(--ink);
   font-size: 1.45rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
+}
+
+.dashboard-kpis strong b {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.dashboard-kpis .net-positive {
+  color: var(--brand);
+}
+
+.dashboard-kpis .net-negative {
+  color: var(--danger);
+}
+
+.dashboard-kpis .net-neutral {
+  color: var(--muted);
 }
 
 .dashboard-table-header {
@@ -1087,6 +1107,7 @@ tbody tr:hover {
   }
 
   .dashboard-header,
+  .dashboard-kpis,
   .dashboard-grid,
   .workflow-steps,
   .label-rule-form {

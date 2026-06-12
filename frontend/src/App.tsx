@@ -280,6 +280,9 @@ function Home() {
     },
     { creditAmount: 0, creditCount: 0, debitAmount: 0, debitCount: 0 },
   );
+  const dashboardNetAmount = dashboardKpis.creditAmount - dashboardKpis.debitAmount;
+  const dashboardNetTone = dashboardNetAmount > 0 ? "positive" : dashboardNetAmount < 0 ? "negative" : "neutral";
+  const dashboardNetArrow = dashboardNetAmount > 0 ? "▲" : dashboardNetAmount < 0 ? "▼" : "•";
   const dashboardMaxAmount = Math.max(...dashboardChartData.map((item) => item.value), 1);
   const allDashboardAccountsSelected = dashboardAccountIds.length === 0 || dashboardAccountIds.length === accounts.length;
   const dashboardAccountSummary =
@@ -696,6 +699,14 @@ function Home() {
                 <span>Credit activity</span>
                 <strong>{formatCurrency(dashboardKpis.creditAmount)}</strong>
                 <em>{dashboardKpis.creditCount} credit row(s)</em>
+              </article>
+              <article>
+                <span>Net activity</span>
+                <strong className={`net-${dashboardNetTone}`}>
+                  <b aria-hidden="true">{dashboardNetArrow}</b>
+                  {formatCurrency(Math.abs(dashboardNetAmount))}
+                </strong>
+                <em>credits minus debits</em>
               </article>
             </div>
             <div className="dashboard-table-header">

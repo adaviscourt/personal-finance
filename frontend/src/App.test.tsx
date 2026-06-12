@@ -256,6 +256,9 @@ describe("App", () => {
     expect(screen.getByText("Credit activity")).toBeInTheDocument();
     expect(screen.getByText("1 credit row(s)")).toBeInTheDocument();
     expect(screen.getByText("$1800.00")).toBeInTheDocument();
+    expect(screen.getByText("Net activity")).toBeInTheDocument();
+    expect(screen.getByText("credits minus debits")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "▲$1774.75")).toHaveClass("net-positive");
     expect((await screen.findAllByText("Groceries")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("$25.25").length).toBeGreaterThan(0);
     expect(screen.getByText("Total debit spending: $33.25")).toBeInTheDocument();
