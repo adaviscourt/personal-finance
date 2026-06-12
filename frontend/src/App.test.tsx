@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -271,6 +271,11 @@ describe("App", () => {
     expect((await screen.findAllByText("Groceries")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("$25.25").length).toBeGreaterThan(0);
     expect(screen.getByText("Total debit spending: $33.25")).toBeInTheDocument();
+    expect(within(screen.getAllByRole("row")[1]).getByText("Payroll")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Amount" }));
+    expect(within(screen.getAllByRole("row")[1]).getByText("Local Market")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Amount" }));
+    expect(within(screen.getAllByRole("row")[1]).getByText("Payroll")).toBeInTheDocument();
     expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), []);
     expect(mockedGetDashboardTransactions).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), {
       accountIds: [],
@@ -315,7 +320,7 @@ describe("App", () => {
     renderApp();
 
     expect(await screen.findByText("Cafe")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Dashboard month"), { target: { value: "2026-02" } });
+    fireEvent.change(screen.getByLabelText("Month"), { target: { value: "2026-02" } });
 
     expect(await screen.findByText("No transactions available for 2026-02 and selected filters.")).toBeInTheDocument();
     expect(mockedGetDashboardSpendingByLabel).toHaveBeenLastCalledWith("2026-02", []);
@@ -325,7 +330,7 @@ describe("App", () => {
   it("persists the selected dashboard month across page refreshes", async () => {
     renderApp();
 
-    fireEvent.change(await screen.findByLabelText("Dashboard month"), { target: { value: "2026-04" } });
+    fireEvent.change(await screen.findByLabelText("Month"), { target: { value: "2026-04" } });
     await waitFor(() => {
       expect(window.localStorage.getItem("personal-finance.dashboardMonth")).toBe("2026-04");
     });
@@ -333,7 +338,7 @@ describe("App", () => {
 
     renderApp();
 
-    expect(await screen.findByLabelText("Dashboard month")).toHaveValue("2026-04");
+    expect(await screen.findByLabelText("Month")).toHaveValue("2026-04");
   });
 
   it("persists dashboard account and label filters across page refreshes", async () => {
@@ -341,20 +346,22 @@ describe("App", () => {
 
     expect((await screen.findAllByText("Travel Card")).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("checkbox", { name: "Checking Account" }));
-    fireEvent.change(screen.getByLabelText("Dashboard label"), { target: { value: "dining" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Uncategorized" }));
 
     await waitFor(() => {
       expect(window.localStorage.getItem("personal-finance.dashboardAccountIds")).toBe("[42]");
-      expect(window.localStorage.getItem("personal-finance.dashboardLabelSlug")).toBe("dining");
+      expect(window.localStorage.getItem("personal-finance.dashboardLabelSlug")).toBe('["dining"]');
     });
     cleanup();
 
     renderApp();
 
-    expect(await screen.findByLabelText("Dashboard label")).toHaveValue("dining");
-    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Labels")).toHaveTextContent("1 selected");
+    expect(screen.getAllByText("1 selected")).toHaveLength(2);
     expect(screen.getByRole("checkbox", { name: "Checking Account" })).not.toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Travel Card" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Uncategorized" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Dining" })).toBeChecked();
   });
 
   it("filters dashboard transactions by selected accounts and label", async () => {
@@ -362,7 +369,7 @@ describe("App", () => {
 
     expect((await screen.findAllByText("Travel Card")).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("checkbox", { name: "Checking Account" }));
-    fireEvent.change(screen.getByLabelText("Dashboard label"), { target: { value: "dining" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Uncategorized" }));
 
     expect(mockedGetDashboardSpendingByLabel).toHaveBeenLastCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), [42]);
     expect(mockedGetDashboardTransactions).toHaveBeenLastCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), {
@@ -796,7 +803,7 @@ describe("App", () => {
     fireEvent.click(reviewLink);
 
     expect(await screen.findByText("Monthly transaction review")).toBeInTheDocument();
-    expect(screen.getByLabelText("Dashboard month")).toHaveValue("2026-03");
+    expect(screen.getByLabelText("Month")).toHaveValue("2026-03");
     await waitFor(() => {
       expect(mockedGetDashboardTransactions).toHaveBeenLastCalledWith("2026-03", { accountIds: [42], labelSlugs: [] });
     });

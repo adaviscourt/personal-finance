@@ -52,6 +52,17 @@ type RequiredMappingField = (typeof REQUIRED_FIELDS)[number];
 type OptionalSplitField = (typeof OPTIONAL_SPLIT_FIELDS)[number];
 type MappingDraft = Record<RequiredMappingField | OptionalSplitField, string>;
 type TransformDraft = Record<(typeof REQUIRED_FIELDS)[number], TemplateTransform>;
+type DashboardSortKey = "date" | "account" | "description" | "label" | "direction" | "amount";
+type SortDirection = "asc" | "desc";
+
+const DASHBOARD_SORT_LABELS: Record<DashboardSortKey, string> = {
+  date: "Date",
+  account: "Account",
+  description: "Description",
+  label: "Label",
+  direction: "Direction",
+  amount: "Amount",
+};
 
 function createEmptyMappings(): MappingDraft {
   return { date: "", description: "", amount: "", direction: "", debit: "", credit: "" };
@@ -83,11 +94,20 @@ function readStoredDashboardAccountIds(): number[] {
   }
 }
 
-function readStoredDashboardLabelSlug(): string {
+function readStoredDashboardLabelSlugs(): string[] {
+  let storedSlug = "";
   try {
-    return window.localStorage?.getItem?.(DASHBOARD_LABEL_SLUG_STORAGE_KEY) ?? "";
+    storedSlug = window.localStorage?.getItem?.(DASHBOARD_LABEL_SLUG_STORAGE_KEY) ?? "";
+    if (!storedSlug) {
+      return [];
+    }
+    const parsedSlugs: unknown = JSON.parse(storedSlug);
+    if (Array.isArray(parsedSlugs)) {
+      return parsedSlugs.filter((slug): slug is string => typeof slug === "string" && slug.length > 0);
+    }
+    return typeof parsedSlugs === "string" && parsedSlugs.length > 0 ? [parsedSlugs] : [];
   } catch {
-    return "";
+    return storedSlug ? [storedSlug] : [];
   }
 }
 
@@ -126,6 +146,25 @@ function apiErrorDetail(error: unknown): string | null {
   const response = (error as { response?: { data?: { detail?: unknown } } }).response;
   const detail = response?.data?.detail;
   return typeof detail === "string" ? detail : null;
+}
+
+function dashboardSortValue(transaction: DashboardTransactionRow, key: DashboardSortKey): string | number {
+  if (key === "date") {
+    return transaction.transaction_date;
+  }
+  if (key === "account") {
+    return transaction.account.name;
+  }
+  if (key === "description") {
+    return transaction.merchant || transaction.description;
+  }
+  if (key === "label") {
+    return transaction.label.name;
+  }
+  if (key === "direction") {
+    return transaction.direction;
+  }
+  return Number(transaction.amount);
 }
 
 function Home() {
@@ -172,9 +211,10 @@ function Home() {
   const [labelRuleSaving, setLabelRuleSaving] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(initialDashboardMonth);
   const [dashboardAccountIds, setDashboardAccountIds] = useState<number[]>(readStoredDashboardAccountIds);
-  const [dashboardLabelSlug, setDashboardLabelSlug] = useState(readStoredDashboardLabelSlug);
+  const [dashboardLabelSlugs, setDashboardLabelSlugs] = useState<string[]>(readStoredDashboardLabelSlugs);
   const [dashboardLabels, setDashboardLabels] = useState<DashboardSpendingLabel[]>([]);
   const [dashboardTransactions, setDashboardTransactions] = useState<DashboardTransactionRow[]>([]);
+  const [dashboardSort, setDashboardSort] = useState<{ key: DashboardSortKey; direction: SortDirection }>({ key: "date", direction: "desc" });
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const previewRequestId = useRef(0);
@@ -269,7 +309,7 @@ function Home() {
   useEffect(() => {
     writeStoredValue(DASHBOARD_MONTH_STORAGE_KEY, selectedMonth);
     writeStoredValue(DASHBOARD_ACCOUNT_IDS_STORAGE_KEY, JSON.stringify(dashboardAccountIds));
-    writeStoredValue(DASHBOARD_LABEL_SLUG_STORAGE_KEY, dashboardLabelSlug);
+    writeStoredValue(DASHBOARD_LABEL_SLUG_STORAGE_KEY, JSON.stringify(dashboardLabelSlugs));
 
     let active = true;
     setDashboardError(null);
@@ -279,7 +319,7 @@ function Home() {
       getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds),
       getDashboardTransactions(selectedMonth, {
         accountIds: dashboardAccountIds,
-        labelSlugs: dashboardLabelSlug ? [dashboardLabelSlug] : [],
+        labelSlugs: dashboardLabelSlugs,
       }),
     ])
       .then(([spendingDashboard, transactionDashboard]) => {
@@ -304,11 +344,20 @@ function Home() {
     return () => {
       active = false;
     };
-  }, [selectedMonth, dashboardAccountIds, dashboardLabelSlug]);
+  }, [selectedMonth, dashboardAccountIds, dashboardLabelSlugs]);
 
-  const filteredDashboardLabels = dashboardLabelSlug
-    ? dashboardLabels.filter((label) => label.label_slug === dashboardLabelSlug)
+  const filteredDashboardLabels = dashboardLabelSlugs.length > 0
+    ? dashboardLabels.filter((label) => dashboardLabelSlugs.includes(label.label_slug))
     : dashboardLabels;
+  const sortedDashboardTransactions = [...dashboardTransactions].sort((first, second) => {
+    const firstValue = dashboardSortValue(first, dashboardSort.key);
+    const secondValue = dashboardSortValue(second, dashboardSort.key);
+    const directionMultiplier = dashboardSort.direction === "asc" ? 1 : -1;
+    if (typeof firstValue === "number" && typeof secondValue === "number") {
+      return (firstValue - secondValue) * directionMultiplier;
+    }
+    return String(firstValue).localeCompare(String(secondValue), undefined, { numeric: true, sensitivity: "base" }) * directionMultiplier;
+  });
   const labelsByScope = labels.reduce<Array<{ scope: string; labels: TransactionLabel[] }>>((groups, label) => {
     const scope = label.account_name ?? "Global";
     const group = groups.find((currentGroup) => currentGroup.scope === scope);
@@ -348,12 +397,19 @@ function Home() {
   const dashboardNetArrow = dashboardNetAmount > 0 ? "▲" : dashboardNetAmount < 0 ? "▼" : "•";
   const dashboardMaxAmount = Math.max(...dashboardChartData.map((item) => item.value), 1);
   const allDashboardAccountsSelected = dashboardAccountIds.length === 0 || dashboardAccountIds.length === accounts.length;
+  const allDashboardLabelsSelected = dashboardLabelSlugs.length === 0 || dashboardLabelSlugs.length === labels.length;
   const dashboardAccountSummary =
     accounts.length === 0
       ? "No accounts"
       : allDashboardAccountsSelected
         ? "All accounts"
         : `${dashboardAccountIds.length} selected`;
+  const dashboardLabelSummary =
+    labels.length === 0
+      ? "No labels"
+      : allDashboardLabelsSelected
+        ? "All labels"
+        : `${dashboardLabelSlugs.length} selected`;
   const activeAccount = activeAccountId === "" ? null : accounts.find((account) => account.id === activeAccountId) ?? null;
   const hasPreview = Boolean(preview);
   const showUploadStep = activeAccountId !== "";
@@ -385,7 +441,7 @@ function Home() {
       getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds),
       getDashboardTransactions(selectedMonth, {
         accountIds: dashboardAccountIds,
-        labelSlugs: dashboardLabelSlug ? [dashboardLabelSlug] : [],
+        labelSlugs: dashboardLabelSlugs,
       }),
     ])
       .then(([spendingDashboard, transactionDashboard]) => {
@@ -417,6 +473,33 @@ function Home() {
     const nextIds = checked ? [...selectedIds, accountId] : selectedIds.filter((id) => id !== accountId);
     const uniqueIds = Array.from(new Set(nextIds));
     setDashboardAccountIds(uniqueIds.length === accounts.length ? [] : uniqueIds);
+  }
+
+  function toggleDashboardLabel(labelSlug: string, checked: boolean) {
+    const selectedSlugs = allDashboardLabelsSelected ? labels.map((label) => label.slug) : dashboardLabelSlugs;
+    const nextSlugs = checked ? [...selectedSlugs, labelSlug] : selectedSlugs.filter((slug) => slug !== labelSlug);
+    const uniqueSlugs = Array.from(new Set(nextSlugs));
+    setDashboardLabelSlugs(uniqueSlugs.length === labels.length ? [] : uniqueSlugs);
+  }
+
+  function toggleDashboardSort(key: DashboardSortKey) {
+    setDashboardSort((currentSort) => ({
+      key,
+      direction: currentSort.key === key && currentSort.direction === "asc" ? "desc" : "asc",
+    }));
+  }
+
+  function renderDashboardSortHeader(key: DashboardSortKey) {
+    const isActive = dashboardSort.key === key;
+    const sortLabel = DASHBOARD_SORT_LABELS[key];
+    return (
+      <th scope="col" aria-sort={isActive ? (dashboardSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+        <button type="button" className="sort-button" onClick={() => toggleDashboardSort(key)}>
+          <span>{sortLabel}</span>
+          {isActive ? <b aria-hidden="true">{dashboardSort.direction === "asc" ? "▲" : "▼"}</b> : null}
+        </button>
+      </th>
+    );
   }
 
   function refreshAccounts() {
@@ -734,14 +817,14 @@ function Home() {
             <p className="dashboard-help">Filter first, then scan transactions. Spending totals stay secondary.</p>
           </div>
           <label className="month-picker">
-            <span>Dashboard month</span>
+            <span>Month</span>
             <input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
           </label>
           <div className="account-filter">
-            <span>Dashboard accounts</span>
+            <span>Accounts</span>
             <details className="account-dropdown">
-              <summary aria-label="Dashboard accounts">{dashboardAccountSummary}</summary>
-              <div className="account-dropdown-menu" role="group" aria-label="Dashboard account options">
+              <summary aria-label="Accounts">{dashboardAccountSummary}</summary>
+              <div className="account-dropdown-menu" role="group" aria-label="Account options">
                 <button type="button" onClick={() => setDashboardAccountIds([])}>
                   Select all accounts
                 </button>
@@ -758,21 +841,27 @@ function Home() {
               </div>
             </details>
           </div>
-          <label className="label-filter">
-            <span>Dashboard label</span>
-            <select
-              aria-label="Dashboard label"
-              value={dashboardLabelSlug}
-              onChange={(event) => setDashboardLabelSlug(event.target.value)}
-            >
-              <option value="">All labels</option>
-              {labels.map((label) => (
-                <option key={label.id} value={label.slug}>
-                  {label.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="label-filter">
+            <span>Labels</span>
+            <details className="account-dropdown">
+              <summary aria-label="Labels">{dashboardLabelSummary}</summary>
+              <div className="account-dropdown-menu" role="group" aria-label="Label options">
+                <button type="button" onClick={() => setDashboardLabelSlugs([])}>
+                  Select all labels
+                </button>
+                {labels.map((label) => (
+                  <label key={label.id}>
+                    <input
+                      type="checkbox"
+                      checked={allDashboardLabelsSelected || dashboardLabelSlugs.includes(label.slug)}
+                      onChange={(event) => toggleDashboardLabel(label.slug, event.target.checked)}
+                    />
+                    <span>{label.name}{label.account_name ? ` (${label.account_name})` : ""}</span>
+                  </label>
+                ))}
+              </div>
+            </details>
+          </div>
         </div>
         {dashboardError ? <p className="preview-error">{dashboardError}</p> : null}
         {dashboardLoading ? (
@@ -809,16 +898,16 @@ function Home() {
               <table className="transaction-table">
                 <thead>
                   <tr>
-                    <th scope="col">Date</th>
-                    <th scope="col">Account</th>
-                    <th scope="col">Description</th>
-                    <th scope="col">Label</th>
-                    <th scope="col">Direction</th>
-                    <th scope="col">Amount</th>
+                    {renderDashboardSortHeader("date")}
+                    {renderDashboardSortHeader("account")}
+                    {renderDashboardSortHeader("description")}
+                    {renderDashboardSortHeader("label")}
+                    {renderDashboardSortHeader("direction")}
+                    {renderDashboardSortHeader("amount")}
                   </tr>
                 </thead>
                 <tbody>
-                  {dashboardTransactions.map((transaction) => (
+                  {sortedDashboardTransactions.map((transaction) => (
                     <tr key={transaction.id}>
                       <td>{transaction.transaction_date}</td>
                       <td>{transaction.account.name}</td>
@@ -1225,7 +1314,7 @@ function Home() {
                   onClick={() => {
                     setSelectedMonth(reviewMonth);
                     setDashboardAccountIds(activeAccountId === "" ? [] : [activeAccountId]);
-                    setDashboardLabelSlug("");
+                    setDashboardLabelSlugs([]);
                   }}
                 >
                   Review {formatMonthLabel(reviewMonth)} imports on dashboard
