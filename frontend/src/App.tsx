@@ -1032,11 +1032,16 @@ function Home() {
                 {dashboardNetSeries.map((point, index) => {
                   const x = dashboardNetSeries.length === 1 ? 150 : (index / (dashboardNetSeries.length - 1)) * 300;
                   const y = 130 - ((point.amount - dashboardNetMin) / dashboardNetRange) * 110;
+                  const tooltipX = Math.min(Math.max(x - 43, 2), 212);
+                  const tooltipY = Math.max(y - 33, 2);
                   return (
-                    <g key={point.month} className="net-activity-point">
-                      <title>{`${formatMonthLabel(point.month)}: ${formatCurrency(point.amount)}`}</title>
+                    <g key={point.month} className="net-activity-point" tabIndex={0} aria-label={`${formatMonthLabel(point.month)}: ${formatCurrency(point.amount)}`}>
                       <circle className="net-activity-hit-area" cx={x} cy={y} r="12" />
                       <circle cx={x} cy={y} r={point.month === selectedMonth ? 4.5 : 3.5} />
+                      <g className="net-activity-tooltip" aria-hidden="true">
+                        <rect x={tooltipX} y={tooltipY} width="86" height="24" rx="4" />
+                        <text x={tooltipX + 43} y={tooltipY + 16}>{formatCurrency(point.amount)}</text>
+                      </g>
                     </g>
                   );
                 })}

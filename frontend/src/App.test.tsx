@@ -270,7 +270,7 @@ describe("App", () => {
     expect(screen.getAllByText("Net activity").length).toBeGreaterThan(0);
     expect(screen.getByText("credits minus debits")).toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.textContent === "▲$1774.75")).toHaveClass("net-positive");
-    expect(screen.getByText("June 2026: $1774.75")).toBeInTheDocument();
+    expect(screen.getByLabelText("June 2026: $1774.75")).toBeInTheDocument();
     expect((await screen.findAllByText("Groceries")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("$25.25").length).toBeGreaterThan(0);
     expect(screen.getByText("Total debit spending: $33.25")).toBeInTheDocument();

@@ -799,17 +799,42 @@ button,
 }
 
 .net-activity-point {
-  cursor: help;
+  cursor: default;
+  outline: none;
 }
 
-.net-activity-hit-area {
+.net-activity-chart .net-activity-hit-area {
   fill: transparent;
   stroke: transparent;
+  stroke-width: 0;
 }
 
 .net-activity-point:hover circle:not(.net-activity-hit-area) {
   fill: var(--brand-soft);
   stroke: var(--brand-dark);
+}
+
+.net-activity-tooltip {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease-out;
+}
+
+.net-activity-point:hover .net-activity-tooltip,
+.net-activity-point:focus .net-activity-tooltip {
+  opacity: 1;
+}
+
+.net-activity-tooltip rect {
+  fill: var(--ink);
+  stroke: none;
+}
+
+.net-activity-tooltip text {
+  fill: white;
+  font-size: 0.8rem;
+  font-weight: 850;
+  text-anchor: middle;
 }
 
 .net-activity-labels {
