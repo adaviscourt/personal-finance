@@ -33,6 +33,7 @@ import {
 import "./App.css";
 
 const REQUIRED_FIELDS = ["date", "description", "amount", "direction"] as const;
+const OPTIONAL_SPLIT_FIELDS = ["debit", "credit"] as const;
 const DASHBOARD_MONTH_STORAGE_KEY = "personal-finance.dashboardMonth";
 const DASHBOARD_ACCOUNT_IDS_STORAGE_KEY = "personal-finance.dashboardAccountIds";
 const DASHBOARD_LABEL_SLUG_STORAGE_KEY = "personal-finance.dashboardLabelSlug";
@@ -44,11 +45,13 @@ const DEFAULT_TRANSFORMS: Record<(typeof REQUIRED_FIELDS)[number], TemplateTrans
 };
 const CHART_COLORS = ["#0850c4", "#063d95", "#5868a8", "#7b5d2a", "#2f7282", "#8a4c82"];
 
-type MappingDraft = Record<(typeof REQUIRED_FIELDS)[number], string>;
+type RequiredMappingField = (typeof REQUIRED_FIELDS)[number];
+type OptionalSplitField = (typeof OPTIONAL_SPLIT_FIELDS)[number];
+type MappingDraft = Record<RequiredMappingField | OptionalSplitField, string>;
 type TransformDraft = Record<(typeof REQUIRED_FIELDS)[number], TemplateTransform>;
 
 function createEmptyMappings(): MappingDraft {
-  return { date: "", description: "", amount: "", direction: "" };
+  return { date: "", description: "", amount: "", direction: "", debit: "", credit: "" };
 }
 
 function createDefaultTransforms(): TransformDraft {
@@ -259,13 +262,22 @@ function Home() {
         ? "All accounts"
         : `${dashboardAccountIds.length} selected`;
   const activeAccount = activeAccountId === "" ? null : accounts.find((account) => account.id === activeAccountId) ?? null;
-  const missingMappingFields = REQUIRED_FIELDS.filter((field) => !mappingDraft[field]);
   const hasPreview = Boolean(preview);
   const showUploadStep = activeAccountId !== "";
   const showTemplateStep = hasPreview;
   const showMappingStep = hasPreview && selectedTemplateId === "new";
   const showImportReview = Boolean(preparedImport);
   const selectedTemplate = selectedTemplateId === "new" ? null : templates.find((template) => template.id === selectedTemplateId) ?? null;
+  const hasSplitColumns = Boolean(mappingDraft.debit && mappingDraft.credit);
+  const missingMappingFields = REQUIRED_FIELDS.filter((field) => {
+    if (field === "amount" && transformDraft.amount === "split_amount" && hasSplitColumns) {
+      return false;
+    }
+    if (field === "direction" && transformDraft.direction === "split_amount_direction" && hasSplitColumns) {
+      return false;
+    }
+    return !mappingDraft[field];
+  });
   const importValidationItems = [
     selectedFile ? null : "Choose a source CSV file.",
     activeAccountId === "" ? "Choose the account receiving this import." : null,
@@ -391,6 +403,11 @@ function Home() {
       nextMappings[field] = mapping?.source_column ?? "";
       nextTransforms[field] = mapping?.transform ?? DEFAULT_TRANSFORMS[field];
     }
+    const splitMapping = [template.config.mappings.amount, template.config.mappings.direction].find(
+      (mapping) => mapping?.debit_column || mapping?.credit_column,
+    );
+    nextMappings.debit = splitMapping?.debit_column ?? "";
+    nextMappings.credit = splitMapping?.credit_column ?? "";
 
     setTemplateName(template.name);
     setMappingDraft(nextMappings);
@@ -399,8 +416,8 @@ function Home() {
 
   function buildTemplateConfig(): ImportTemplateConfig {
     const splitColumns = {
-      debit_column: mappingDraft.amount,
-      credit_column: mappingDraft.direction,
+      debit_column: mappingDraft.debit,
+      credit_column: mappingDraft.credit,
     };
 
     return {
@@ -438,7 +455,7 @@ function Home() {
       return;
     }
 
-    const missingField = REQUIRED_FIELDS.find((field) => !mappingDraft[field]);
+    const missingField = missingMappingFields[0];
     if (missingField) {
       setTemplateError(`Map the required ${missingField} field before saving.`);
       return;
@@ -485,7 +502,7 @@ function Home() {
       setImportError("Choose the account receiving this import before updating the transform preview.");
       return;
     }
-    const missingField = REQUIRED_FIELDS.find((field) => !mappingDraft[field]);
+    const missingField = missingMappingFields[0];
     if (missingField) {
       setImportError(`Map the required ${missingField} field before updating the transform preview.`);
       return;
@@ -965,8 +982,33 @@ function Home() {
                     </label>
                   </div>
                 ))}
+                {OPTIONAL_SPLIT_FIELDS.map((field) => (
+                  <div className="mapping-row" key={field}>
+                    <strong>{field}</strong>
+                    <label>
+                      <span>Source column</span>
+                      <select
+                        value={mappingDraft[field]}
+                        onChange={(event) => {
+                          setMappingDraft((current) => ({ ...current, [field]: event.target.value }));
+                          setPreparedImport(null);
+                          setImportResult(null);
+                          setImportStatus(null);
+                        }}
+                      >
+                        <option value="">Optional column</option>
+                        {preview.source_columns.map((column) => (
+                          <option key={column} value={column}>
+                            {column}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <span className="template-note">Used by split amount and split amount direction.</span>
+                  </div>
+                ))}
                 </div>
-                <p className="template-note">For split debit/credit files, set amount source to Debit, direction source to Credit, amount transform to split amount, and direction transform to split amount direction.</p>
+                <p className="template-note">For split debit/credit files, set debit and credit optional columns, amount transform to split amount, and direction transform to split amount direction. Amount source may stay empty.</p>
               </div>
               ) : null}
               {templateError ? <p className="preview-error">{templateError}</p> : null}

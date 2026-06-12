@@ -531,6 +531,65 @@ describe("App", () => {
     expect(mockedPrepareImport).toHaveBeenCalledWith(expect.any(File), 1, expect.any(Object));
   });
 
+  it("uses optional debit and credit mappings for split templates", async () => {
+    mockedListImportTemplates.mockResolvedValue([
+      {
+        id: 8,
+        name: "Checking",
+        account_id: 1,
+        created_at: "2026-01-01T00:00:00+00:00",
+        updated_at: "2026-01-01T00:00:00+00:00",
+        config: {
+          mappings: {
+            date: { source_column: "Date", transform: "parse_date" },
+            description: { source_column: "Description", transform: "copy_column" },
+            amount: { transform: "split_amount", debit_column: "Debit", credit_column: "Credit" },
+            direction: { transform: "split_amount_direction", debit_column: "Debit", credit_column: "Credit" },
+          },
+        },
+      },
+    ]);
+    mockedPreviewCsv.mockResolvedValue({
+      headers: ["Date", "Description", "Debit", "Credit"],
+      source_columns: ["Date", "Description", "Debit", "Credit"],
+      rows: [{ Date: "2026-01-01", Description: "Coffee", Debit: "4.50", Credit: "" }],
+    });
+    mockedPrepareImport.mockResolvedValue({
+      upload_file_id: 22,
+      row_count: 1,
+      transformed_preview: [{ date: "2026-01-01", description: "Coffee", amount: "4.50", direction: "debit" }],
+      duplicate_candidates: [],
+    });
+
+    renderApp("/import");
+
+    fireEvent.change(await screen.findByLabelText("Statement CSV"), {
+      target: { files: [new File(["Date,Description,Debit,Credit\n2026-01-01,Coffee,4.50,\n"], "statement.csv")] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+
+    expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Template"), { target: { value: "8" } });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Update transform preview" })).not.toBeDisabled();
+    });
+    const updateButton = screen.getByRole("button", { name: "Update transform preview" });
+    fireEvent.click(updateButton);
+
+    await waitFor(() => {
+      expect(mockedPrepareImport).toHaveBeenCalled();
+    });
+    expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
+    expect(mockedPrepareImport).toHaveBeenCalledWith(expect.any(File), 1, {
+      mappings: {
+        date: { source_column: "Date", transform: "parse_date" },
+        description: { source_column: "Description", transform: "copy_column" },
+        amount: { transform: "split_amount", debit_column: "Debit", credit_column: "Credit" },
+        direction: { transform: "split_amount_direction", debit_column: "Debit", credit_column: "Credit" },
+      },
+    });
+  });
+
   it("creates label rules with fixed labels and no custom label action", async () => {
     mockedListLabelRules.mockResolvedValue([
       {
@@ -601,7 +660,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
 
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
-    expect(screen.getByText("debit")).toBeInTheDocument();
+    expect(screen.getAllByText("debit").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
 
     expect(await screen.findByText("Imported 1 transaction(s).")).toBeInTheDocument();
