@@ -693,7 +693,7 @@ button,
 }
 
 .chart-card,
-.dashboard-legend {
+.net-activity-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface-panel);
@@ -719,14 +719,21 @@ button,
 
 .spending-bars div {
   display: grid;
-  gap: 7px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 12px;
   align-items: center;
 }
 
-.spending-bars span {
+.spending-bars span,
+.spending-bars em {
   color: var(--ink);
   font-size: 0.94rem;
   font-weight: 850;
+}
+
+.spending-bars em {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
 }
 
 .spending-bars i {
@@ -737,37 +744,71 @@ button,
   border-radius: 999px;
 }
 
-.dashboard-legend {
+.net-activity-card {
   display: grid;
-  align-content: center;
-  gap: 0;
-  padding: 8px 0;
+  gap: 12px;
+  padding: 16px;
 }
 
-.dashboard-legend div {
-  display: grid;
-  grid-template-columns: 14px 1fr auto;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
+.net-activity-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: baseline;
+  justify-content: space-between;
 }
 
-.dashboard-legend div:last-child {
-  border-bottom: 0;
+.net-activity-header h3 {
+  margin: 0;
 }
 
-.dashboard-legend span {
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
+.net-activity-header span,
+.net-activity-labels span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
-.dashboard-legend em {
+.net-activity-chart {
+  width: 100%;
+  min-height: 180px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-panel) 100%);
+  overflow: visible;
+}
+
+.net-activity-chart line {
+  stroke: var(--border-strong);
+  stroke-dasharray: 5 5;
+  stroke-width: 1.5;
+}
+
+.net-activity-chart polyline {
+  fill: none;
+  stroke: var(--brand);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3.5;
+}
+
+.net-activity-chart circle {
+  fill: var(--surface);
+  stroke: var(--brand);
+  stroke-width: 3;
+}
+
+.net-activity-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.net-activity-card > strong {
   color: var(--ink);
-  font-style: normal;
   font-variant-numeric: tabular-nums;
   font-weight: 850;
+  text-align: right;
 }
 
 .upload-form button:disabled,
