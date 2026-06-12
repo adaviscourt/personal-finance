@@ -10,6 +10,7 @@ import {
   createLabelRule,
   createImportTemplate,
   deleteAccount,
+  deleteLabel,
   getDashboardSpendingByLabel,
   getDashboardTransactions,
   listAccounts,
@@ -20,6 +21,7 @@ import {
   previewLabelRuleMatches,
   prepareImport,
   renameAccount,
+  updateLabel,
   updateImportTemplate,
 } from "./api/client";
 
@@ -30,6 +32,7 @@ vi.mock("./api/client", () => ({
   createLabelRule: vi.fn(),
   createImportTemplate: vi.fn(),
   deleteAccount: vi.fn(),
+  deleteLabel: vi.fn(),
   getDashboardSpendingByLabel: vi.fn(),
   getDashboardTransactions: vi.fn(),
   listAccounts: vi.fn(),
@@ -40,6 +43,7 @@ vi.mock("./api/client", () => ({
   previewLabelRuleMatches: vi.fn(),
   prepareImport: vi.fn(),
   renameAccount: vi.fn(),
+  updateLabel: vi.fn(),
   updateImportTemplate: vi.fn(),
 }));
 
@@ -49,6 +53,7 @@ const mockedCreateLabel = vi.mocked(createLabel);
 const mockedCreateLabelRule = vi.mocked(createLabelRule);
 const mockedCreateImportTemplate = vi.mocked(createImportTemplate);
 const mockedDeleteAccount = vi.mocked(deleteAccount);
+const mockedDeleteLabel = vi.mocked(deleteLabel);
 const mockedGetDashboardSpendingByLabel = vi.mocked(getDashboardSpendingByLabel);
 const mockedGetDashboardTransactions = vi.mocked(getDashboardTransactions);
 const mockedListAccounts = vi.mocked(listAccounts);
@@ -59,6 +64,7 @@ const mockedPreviewCsv = vi.mocked(previewCsv);
 const mockedPreviewLabelRuleMatches = vi.mocked(previewLabelRuleMatches);
 const mockedPrepareImport = vi.mocked(prepareImport);
 const mockedRenameAccount = vi.mocked(renameAccount);
+const mockedUpdateLabel = vi.mocked(updateLabel);
 const mockedUpdateImportTemplate = vi.mocked(updateImportTemplate);
 
 const testStorage = new Map<string, string>();
@@ -116,16 +122,19 @@ describe("App", () => {
     mockedCreateLabel.mockReset();
     mockedCreateAccount.mockReset();
     mockedDeleteAccount.mockReset();
+    mockedDeleteLabel.mockReset();
     mockedCreateImportTemplate.mockReset();
     mockedConfirmImport.mockReset();
     mockedUpdateImportTemplate.mockReset();
     mockedPrepareImport.mockReset();
     mockedRenameAccount.mockReset();
+    mockedUpdateLabel.mockReset();
     mockedGetDashboardSpendingByLabel.mockReset();
     mockedGetDashboardTransactions.mockReset();
     mockedGetDashboardSpendingByLabel.mockResolvedValue({ month: "2026-01", labels: [] });
     mockedGetDashboardTransactions.mockResolvedValue({ month: "2026-01", transactions: [] });
     mockedPreviewLabelRuleMatches.mockResolvedValue({ total_count: 0, returned_count: 0, rows: [] });
+    mockedDeleteLabel.mockResolvedValue();
   });
 
   it("renders primary module navigation and a dashboard-only home route", async () => {
@@ -716,6 +725,33 @@ describe("App", () => {
     expect(mockedCreateLabelRule).toHaveBeenCalledWith({ label_id: 8, match_field: "description", match_type: "regex", pattern: "Bistro" });
     expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), []);
     expect(mockedGetDashboardTransactions).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), { accountIds: [], labelSlugs: [] });
+  });
+
+  it("edits and deletes custom labels", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    mockedListLabels.mockResolvedValue([
+      { id: 1, slug: "uncategorized", name: "Uncategorized", account_id: null, account_name: null, is_controllable: false, is_system: true },
+      { id: 9, slug: "loan-payment-controllable", name: "Loan Payment", account_id: null, account_name: null, is_controllable: true, is_system: false },
+    ]);
+    mockedUpdateLabel.mockResolvedValue({ id: 9, slug: "mortgage-non-controllable", name: "Mortgage", account_id: null, account_name: null, is_controllable: false, is_system: false });
+
+    renderApp("/labeling");
+
+    expect((await screen.findAllByText("Loan Payment")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const editForm = screen.getByDisplayValue("Loan Payment").closest("form");
+    expect(editForm).not.toBeNull();
+    fireEvent.change(within(editForm as HTMLFormElement).getByDisplayValue("Loan Payment"), { target: { value: "Mortgage" } });
+    fireEvent.change(within(editForm as HTMLFormElement).getByDisplayValue("Controllable"), { target: { value: "non-controllable" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Label updated.")).toBeInTheDocument();
+    expect(mockedUpdateLabel).toHaveBeenCalledWith(9, { name: "Mortgage", account_id: null, is_controllable: false });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(await screen.findByText("Deleted Mortgage. Matching rules were removed and existing transactions are now uncategorized.")).toBeInTheDocument();
+    expect(mockedDeleteLabel).toHaveBeenCalledWith(9);
+    expect(screen.queryByText("Mortgage")).not.toBeInTheDocument();
   });
 
   it("prepares and confirms an import from mapped preview rows", async () => {

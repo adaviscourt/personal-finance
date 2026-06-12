@@ -6,7 +6,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from app.database import Account, Label, Transaction, engine, init_db
+from app.database import Account, Label, Transaction, TransactionLabelRule, engine, init_db
 from app.main import app, duplicate_fingerprint, normalize_description
 
 
@@ -121,6 +121,57 @@ def test_allows_same_label_name_scope_with_different_control_type() -> None:
     assert non_controllable_response.status_code == 201
     assert controllable_response.json()["slug"] != non_controllable_response.json()["slug"]
     assert duplicate_response.status_code == 409
+
+
+def test_updates_and_deletes_custom_labels() -> None:
+    client = TestClient(app)
+    first_account = create_account(f"Editable Label First {uuid4()}")
+    second_account = create_account(f"Editable Label Second {uuid4()}")
+    label_response = client.post(
+        "/labels",
+        json={"name": f"Loan Payment {uuid4()}", "account_id": first_account.id, "is_controllable": True},
+    )
+    assert label_response.status_code == 201
+    label_id_value = label_response.json()["id"]
+    with Session(engine) as session:
+        transaction = Transaction(
+            account_id=first_account.id or 0,
+            label_id=label_id_value,
+            transaction_date=date.fromisoformat("2026-09-01"),
+            transaction_month="2026-09",
+            description="Editable label transaction",
+            normalized_description=normalize_description("Editable label transaction"),
+            merchant="Editable Merchant",
+            amount=Decimal("25.00"),
+            direction="debit",
+            duplicate_fingerprint=f"editable-label-{uuid4()}",
+        )
+        rule = TransactionLabelRule(label_id=label_id_value, account_id=first_account.id, match_field="description", pattern="Editable")
+        session.add(transaction)
+        session.add(rule)
+        session.commit()
+
+    update_response = client.put(
+        f"/labels/{label_id_value}",
+        json={"name": "Mortgage", "account_id": second_account.id, "is_controllable": False},
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["name"] == "Mortgage"
+    assert update_response.json()["account_id"] == second_account.id
+    assert update_response.json()["is_controllable"] is False
+    with Session(engine) as session:
+        updated_rule = session.exec(select(TransactionLabelRule).where(TransactionLabelRule.label_id == label_id_value)).one()
+    assert updated_rule.account_id == second_account.id
+
+    delete_response = client.delete(f"/labels/{label_id_value}")
+
+    assert delete_response.status_code == 204
+    with Session(engine) as session:
+        assert session.get(Label, label_id_value) is None
+        assert session.exec(select(TransactionLabelRule).where(TransactionLabelRule.label_id == label_id_value)).all() == []
+        transaction = session.exec(select(Transaction).where(Transaction.description == "Editable label transaction")).one()
+    assert transaction.label_id is None
 
 
 def test_regex_rules_can_preview_and_apply_specific_descriptions() -> None:

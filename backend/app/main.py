@@ -180,6 +180,7 @@ class LabelResponse(BaseModel):
     account_id: int | None
     account_name: str | None = None
     is_controllable: bool
+    is_system: bool
 
 
 class LabelPayload(BaseModel):
@@ -346,6 +347,7 @@ def serialize_label(label: Label, account: Account | None = None) -> LabelRespon
         account_id=label.account_id,
         account_name=account.name if account is not None else None,
         is_controllable=label.is_controllable,
+        is_system=label.is_system,
     )
 
 
@@ -972,6 +974,65 @@ def create_label(payload: LabelPayload) -> LabelResponse:
         session.commit()
         session.refresh(label)
         return serialize_label(label, account)
+
+
+@app.put("/labels/{label_id}")
+def update_label(label_id: int, payload: LabelPayload) -> LabelResponse:
+    with Session(engine) as session:
+        label = session.get(Label, label_id)
+        if label is None:
+            raise HTTPException(status_code=404, detail="Label not found.")
+        if label.is_system:
+            raise HTTPException(status_code=400, detail="System labels cannot be edited.")
+
+        account = session.get(Account, payload.account_id) if payload.account_id is not None else None
+        if payload.account_id is not None and account is None:
+            raise HTTPException(status_code=404, detail="Account not found.")
+
+        existing_label = session.exec(
+            select(Label).where(
+                Label.name == payload.name,
+                Label.account_id == payload.account_id,
+                Label.is_controllable == payload.is_controllable,
+            )
+        ).first()
+        if existing_label is not None and existing_label.id != label.id:
+            raise HTTPException(status_code=409, detail="Label already exists for that scope and control type.")
+
+        label.name = payload.name
+        label.account_id = payload.account_id
+        label.is_controllable = payload.is_controllable
+        label.slug = label_slug(payload.name, payload.account_id, payload.is_controllable)
+        session.add(label)
+        rules = session.exec(select(TransactionLabelRule).where(TransactionLabelRule.label_id == label_id)).all()
+        for rule in rules:
+            rule.account_id = payload.account_id
+            session.add(rule)
+        session.commit()
+        session.refresh(label)
+        return serialize_label(label, account)
+
+
+@app.delete("/labels/{label_id}", status_code=204)
+def delete_label(label_id: int) -> Response:
+    with Session(engine) as session:
+        label = session.get(Label, label_id)
+        if label is None:
+            raise HTTPException(status_code=404, detail="Label not found.")
+        if label.is_system:
+            raise HTTPException(status_code=400, detail="System labels cannot be deleted.")
+
+        transactions = session.exec(select(Transaction).where(Transaction.label_id == label_id)).all()
+        for transaction in transactions:
+            transaction.label_id = None
+            session.add(transaction)
+        rules = session.exec(select(TransactionLabelRule).where(TransactionLabelRule.label_id == label_id)).all()
+        for rule in rules:
+            session.delete(rule)
+        session.commit()
+        session.delete(label)
+        session.commit()
+    return Response(status_code=204)
 
 
 @app.get("/dashboard/spending-by-label")
