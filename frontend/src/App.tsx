@@ -1032,7 +1032,13 @@ function Home() {
                 {dashboardNetSeries.map((point, index) => {
                   const x = dashboardNetSeries.length === 1 ? 150 : (index / (dashboardNetSeries.length - 1)) * 300;
                   const y = 130 - ((point.amount - dashboardNetMin) / dashboardNetRange) * 110;
-                  return <circle key={point.month} cx={x} cy={y} r={point.month === selectedMonth ? 4.5 : 3.5} />;
+                  return (
+                    <g key={point.month} className="net-activity-point">
+                      <title>{`${formatMonthLabel(point.month)}: ${formatCurrency(point.amount)}`}</title>
+                      <circle className="net-activity-hit-area" cx={x} cy={y} r="12" />
+                      <circle cx={x} cy={y} r={point.month === selectedMonth ? 4.5 : 3.5} />
+                    </g>
+                  );
                 })}
               </svg>
               <div className="net-activity-labels">

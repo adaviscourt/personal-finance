@@ -798,6 +798,20 @@ button,
   stroke-width: 3;
 }
 
+.net-activity-point {
+  cursor: help;
+}
+
+.net-activity-hit-area {
+  fill: transparent;
+  stroke: transparent;
+}
+
+.net-activity-point:hover circle:not(.net-activity-hit-area) {
+  fill: var(--brand-soft);
+  stroke: var(--brand-dark);
+}
+
 .net-activity-labels {
   display: flex;
   justify-content: space-between;
