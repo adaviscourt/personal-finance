@@ -25,6 +25,16 @@ The frontend runs at `http://localhost:5173` and the backend health endpoint run
 
 SQLite data is persisted in the `finance-data` Docker volume at `/data/personal_finance.db` inside the backend container.
 
+## Unraid Usage
+
+The Unraid template lives at `unraid/personal-finance.xml` and uses `ghcr.io/adaviscourt/personal-finance:latest`.
+
+- Web UI: `http://[server-ip]:8000/`
+- Persistent app data: `/mnt/user/appdata/personal-finance` on Unraid mounted to `/data` in the container
+- Database URL: `sqlite:////data/personal_finance.db`
+
+Publish a new image by creating a GitHub release. Unraid upgrades can pull the new image without losing data because SQLite stays in the mapped appdata path.
+
 Stop the stack:
 
 ```bash
