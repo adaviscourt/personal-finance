@@ -29,6 +29,17 @@ The system SHALL support deriving transaction direction from the sign of a numer
 ### Requirement: Derive direction from split debit and credit columns
 The system SHALL support deriving transaction direction from separate debit and credit source columns.
 
+### Requirement: Derive amount from split debit and credit columns
+The system SHALL support deriving transaction amount from separate debit and credit source columns.
+
+#### Scenario: Credit amount column has value
+- **WHEN** a split amount transform is applied to a row with a credit column value
+- **THEN** the transformed transaction amount is the absolute credit value
+
+#### Scenario: Debit amount column has value
+- **WHEN** a split amount transform is applied to a row with a debit column value
+- **THEN** the transformed transaction amount is the absolute debit value
+
 #### Scenario: Credit column has value
 - **WHEN** a split amount direction transform is applied to a row with a credit column value
 - **THEN** the transformed transaction direction is `credit`

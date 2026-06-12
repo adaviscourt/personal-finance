@@ -20,6 +20,7 @@ export type TemplateTransform =
   | "parse_date"
   | "parse_numeric"
   | "absolute_numeric"
+  | "split_amount"
   | "signed_amount_direction"
   | "split_amount_direction"
   | "value_lookup";

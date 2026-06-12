@@ -61,6 +61,32 @@ def test_transformed_preview_applies_split_amount_direction() -> None:
     assert [row["direction"] for row in response.json()["rows"]] == ["debit", "credit"]
 
 
+def test_transformed_preview_applies_split_amount() -> None:
+    config = base_template_config(
+        {
+            "transform": "split_amount_direction",
+            "debit_column": "Debit",
+            "credit_column": "Credit",
+        }
+    )
+    config["mappings"]["amount"] = {
+        "transform": "split_amount",
+        "debit_column": "Debit",
+        "credit_column": "Credit",
+    }
+
+    response = post_transformed_preview(
+        "Date,Description,Debit,Credit\n2026-01-01,Coffee,4.50,\n2026-01-02,Refund,,7.25\n",
+        config,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["rows"] == [
+        {"date": "2026-01-01", "description": "Coffee", "amount": "4.50", "direction": "debit"},
+        {"date": "2026-01-02", "description": "Refund", "amount": "7.25", "direction": "credit"},
+    ]
+
+
 def test_transformed_preview_applies_value_lookup_direction() -> None:
     response = post_transformed_preview(
         "Date,Description,Amount,Type\n2026-01-01,Coffee,4.50,Sale\n2026-01-02,Refund,7.25,Return\n",

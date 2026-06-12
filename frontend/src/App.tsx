@@ -398,17 +398,28 @@ function Home() {
   }
 
   function buildTemplateConfig(): ImportTemplateConfig {
+    const splitColumns = {
+      debit_column: mappingDraft.amount,
+      credit_column: mappingDraft.direction,
+    };
+
     return {
       mappings: {
         date: { source_column: mappingDraft.date, transform: transformDraft.date },
         description: { source_column: mappingDraft.description, transform: transformDraft.description },
-        amount: { source_column: mappingDraft.amount, transform: transformDraft.amount },
-        direction: {
-          source_column: mappingDraft.direction,
-          transform: transformDraft.direction,
-          positive_direction: "credit",
-          negative_direction: "debit",
-        },
+        amount:
+          transformDraft.amount === "split_amount"
+            ? { transform: transformDraft.amount, ...splitColumns }
+            : { source_column: mappingDraft.amount, transform: transformDraft.amount },
+        direction:
+          transformDraft.direction === "split_amount_direction"
+            ? { transform: transformDraft.direction, ...splitColumns }
+            : {
+                source_column: mappingDraft.direction,
+                transform: transformDraft.direction,
+                positive_direction: "credit",
+                negative_direction: "debit",
+              },
       },
     };
   }
@@ -947,13 +958,15 @@ function Home() {
                         <option value="parse_date">parse date</option>
                         <option value="parse_numeric">parse numeric</option>
                         <option value="absolute_numeric">absolute numeric</option>
+                        <option value="split_amount">split amount</option>
                         <option value="signed_amount_direction">signed amount direction</option>
+                        <option value="split_amount_direction">split amount direction</option>
                       </select>
                     </label>
                   </div>
                 ))}
                 </div>
-                <p className="template-note">Signed amount direction saves positive as credit and negative as debit.</p>
+                <p className="template-note">For split debit/credit files, set amount source to Debit, direction source to Credit, amount transform to split amount, and direction transform to split amount direction.</p>
               </div>
               ) : null}
               {templateError ? <p className="preview-error">{templateError}</p> : null}

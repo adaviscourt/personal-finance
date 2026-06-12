@@ -55,6 +55,7 @@ class TemplateFieldMapping(BaseModel):
         "parse_date",
         "parse_numeric",
         "absolute_numeric",
+        "split_amount",
         "signed_amount_direction",
         "split_amount_direction",
         "value_lookup",
@@ -74,9 +75,9 @@ class TemplateFieldMapping(BaseModel):
 
     @model_validator(mode="after")
     def validate_transform_config(self):
-        if self.transform == "split_amount_direction":
+        if self.transform in {"split_amount", "split_amount_direction"}:
             if not self.debit_column or not self.credit_column:
-                raise ValueError("split_amount_direction requires debit_column and credit_column.")
+                raise ValueError(f"{self.transform} requires debit_column and credit_column.")
             return self
 
         if not self.source_column:
@@ -432,6 +433,14 @@ def apply_transform(row: dict[str, Any], mapping: TemplateFieldMapping) -> Any:
     if mapping.transform == "absolute_numeric":
         parsed_value = parse_decimal_value(source_value(row, mapping.source_column))
         return serialize_decimal(abs(parsed_value)) if parsed_value is not None else None
+    if mapping.transform == "split_amount":
+        credit_value = parse_decimal_value(source_value(row, mapping.credit_column))
+        if credit_value is not None and credit_value != 0:
+            return serialize_decimal(abs(credit_value))
+        debit_value = parse_decimal_value(source_value(row, mapping.debit_column))
+        if debit_value is not None and debit_value != 0:
+            return serialize_decimal(abs(debit_value))
+        return None
     if mapping.transform == "signed_amount_direction":
         parsed_value = parse_decimal_value(source_value(row, mapping.source_column))
         if parsed_value is None or parsed_value == 0:
