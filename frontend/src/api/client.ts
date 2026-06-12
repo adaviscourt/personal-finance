@@ -175,6 +175,7 @@ export type DashboardTransactionLabel = {
   id: number | null;
   slug: string;
   name: string;
+  is_controllable: boolean;
 };
 
 export type DashboardTransactionRow = {

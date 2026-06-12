@@ -565,6 +565,36 @@ button,
   line-height: 1;
 }
 
+.credit-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--border);
+  overflow: hidden;
+}
+
+.credit-split div {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  background: var(--surface);
+}
+
+.credit-split span,
+.credit-split em {
+  font-size: 0.74rem;
+}
+
+.credit-split b {
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
 .dashboard-kpis .net-positive {
   color: var(--brand);
 }

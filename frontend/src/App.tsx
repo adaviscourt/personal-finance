@@ -378,10 +378,15 @@ function Home() {
     (totals, transaction) => {
       const amount = Number(transaction.amount);
       if (transaction.direction === "credit") {
+        const creditBucket = transaction.label.is_controllable ? "controllable" : "nonControllable";
         return {
           ...totals,
           creditAmount: totals.creditAmount + amount,
           creditCount: totals.creditCount + 1,
+          [creditBucket]: {
+            amount: totals[creditBucket].amount + amount,
+            count: totals[creditBucket].count + 1,
+          },
         };
       }
       return {
@@ -390,7 +395,14 @@ function Home() {
         debitCount: totals.debitCount + 1,
       };
     },
-    { creditAmount: 0, creditCount: 0, debitAmount: 0, debitCount: 0 },
+    {
+      creditAmount: 0,
+      creditCount: 0,
+      debitAmount: 0,
+      debitCount: 0,
+      controllable: { amount: 0, count: 0 },
+      nonControllable: { amount: 0, count: 0 },
+    },
   );
   const dashboardNetAmount = dashboardKpis.creditAmount - dashboardKpis.debitAmount;
   const dashboardNetTone = dashboardNetAmount > 0 ? "positive" : dashboardNetAmount < 0 ? "negative" : "neutral";
@@ -880,6 +892,18 @@ function Home() {
                 <span>Credit activity</span>
                 <strong>{formatCurrency(dashboardKpis.creditAmount)}</strong>
                 <em>{dashboardKpis.creditCount} credit row(s)</em>
+                <div className="credit-split" aria-label="Credit activity split">
+                  <div>
+                    <span>Controllable</span>
+                    <b>{formatCurrency(dashboardKpis.controllable.amount)}</b>
+                    <em>{dashboardKpis.controllable.count} row(s)</em>
+                  </div>
+                  <div>
+                    <span>Non-controllable</span>
+                    <b>{formatCurrency(dashboardKpis.nonControllable.amount)}</b>
+                    <em>{dashboardKpis.nonControllable.count} row(s)</em>
+                  </div>
+                </div>
               </article>
               <article>
                 <span>Net activity</span>

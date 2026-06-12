@@ -227,7 +227,7 @@ describe("App", () => {
           account: { id: 42, name: "Travel Card" },
           description: "Local Market weekly groceries",
           merchant: "Local Market",
-          label: { id: 3, slug: "groceries", name: "Groceries" },
+          label: { id: 3, slug: "groceries", name: "Groceries", is_controllable: true },
           direction: "debit",
           amount: "25.25",
           source_type: null,
@@ -240,7 +240,7 @@ describe("App", () => {
           account: { id: 1, name: "Checking Account" },
           description: "Payroll deposit",
           merchant: "Payroll",
-          label: { id: 1, slug: "income", name: "Income" },
+          label: { id: 1, slug: "income", name: "Income", is_controllable: false },
           direction: "credit",
           amount: "1800.00",
           source_type: null,
@@ -264,7 +264,7 @@ describe("App", () => {
     expect(screen.getByText("1 debit row(s)")).toBeInTheDocument();
     expect(screen.getByText("Credit activity")).toBeInTheDocument();
     expect(screen.getByText("1 credit row(s)")).toBeInTheDocument();
-    expect(screen.getByText("$1800.00")).toBeInTheDocument();
+    expect(screen.getAllByText("$1800.00").length).toBeGreaterThan(0);
     expect(screen.getByText("Net activity")).toBeInTheDocument();
     expect(screen.getByText("credits minus debits")).toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.textContent === "▲$1774.75")).toHaveClass("net-positive");
@@ -295,7 +295,7 @@ describe("App", () => {
         account: { id: 1, name: "Checking Account" },
         description: "Cafe",
         merchant: null,
-        label: { id: 2, slug: "dining", name: "Dining" },
+        label: { id: 2, slug: "dining", name: "Dining", is_controllable: true },
         direction: "debit",
         amount: "8.00",
         source_type: null,
@@ -308,7 +308,7 @@ describe("App", () => {
         account: { id: 1, name: "Checking Account" },
         description: "Cafe",
         merchant: null,
-        label: { id: 2, slug: "dining", name: "Dining" },
+        label: { id: 2, slug: "dining", name: "Dining", is_controllable: true },
         direction: "debit",
         amount: "8.00",
         source_type: null,

@@ -268,6 +268,7 @@ class DashboardTransactionLabel(BaseModel):
     id: int | None
     slug: str
     name: str
+    is_controllable: bool
 
 
 class DashboardTransactionRow(BaseModel):
@@ -394,6 +395,7 @@ def serialize_dashboard_transaction(
             id=label.id if label is not None else None,
             slug=display_label.slug,
             name=display_label.name,
+            is_controllable=display_label.is_controllable,
         ),
         direction=transaction.direction,
         amount=serialize_dashboard_amount(transaction.amount),
