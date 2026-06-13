@@ -107,7 +107,6 @@ export type TransactionLabel = {
   account_id: number | null;
   account_name?: string | null;
   is_controllable: boolean;
-  is_system?: boolean;
 };
 
 export type TransactionLabelPayload = {
@@ -314,15 +313,6 @@ export async function listLabels(): Promise<TransactionLabel[]> {
 export async function createLabel(payload: TransactionLabelPayload): Promise<TransactionLabel> {
   const response = await api.post<TransactionLabel>("/labels", payload);
   return response.data;
-}
-
-export async function updateLabel(labelId: number, payload: TransactionLabelPayload): Promise<TransactionLabel> {
-  const response = await api.put<TransactionLabel>(`/labels/${labelId}`, payload);
-  return response.data;
-}
-
-export async function deleteLabel(labelId: number): Promise<void> {
-  await api.delete(`/labels/${labelId}`);
 }
 
 export async function listLabelRules(): Promise<LabelRule[]> {

@@ -9,7 +9,6 @@ import {
   createLabelRule,
   createImportTemplate,
   deleteAccount,
-  deleteLabel,
   getDashboardSpendingByLabel,
   getDashboardTransactions,
   listAccounts,
@@ -20,7 +19,6 @@ import {
   prepareImport,
   previewLabelRuleMatches,
   renameAccount,
-  updateLabel,
   updateImportTemplate,
   type Account,
   type ConfirmImportResponse,
@@ -218,11 +216,6 @@ function Home() {
   const [newLabelAccountId, setNewLabelAccountId] = useState<number | "">("");
   const [newLabelIsControllable, setNewLabelIsControllable] = useState(true);
   const [labelSaving, setLabelSaving] = useState(false);
-  const [editingLabelId, setEditingLabelId] = useState<number | null>(null);
-  const [editingLabelName, setEditingLabelName] = useState("");
-  const [editingLabelAccountId, setEditingLabelAccountId] = useState<number | "">("");
-  const [editingLabelIsControllable, setEditingLabelIsControllable] = useState(true);
-  const [labelDeletingId, setLabelDeletingId] = useState<number | null>(null);
   const [labelRules, setLabelRules] = useState<LabelRule[]>([]);
   const [labelRuleMatchType, setLabelRuleMatchType] = useState<"contains" | "regex">("contains");
   const [labelRulePattern, setLabelRulePattern] = useState("");
@@ -827,82 +820,6 @@ function Home() {
       setLabelRuleError("Could not save that label. Check for duplicate names with the same scope and control type.");
     } finally {
       setLabelSaving(false);
-    }
-  }
-
-  function beginEditLabel(label: TransactionLabel) {
-    setEditingLabelId(label.id);
-    setEditingLabelName(label.name);
-    setEditingLabelAccountId(label.account_id ?? "");
-    setEditingLabelIsControllable(label.is_controllable);
-    setLabelRuleStatus(null);
-    setLabelRuleError(null);
-  }
-
-  async function handleUpdateLabel(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setLabelRuleStatus(null);
-    setLabelRuleError(null);
-
-    if (editingLabelId === null) {
-      return;
-    }
-    if (!editingLabelName.trim()) {
-      setLabelRuleError("Enter a label name.");
-      return;
-    }
-
-    setLabelSaving(true);
-    try {
-      const savedLabel = await updateLabel(editingLabelId, {
-        name: editingLabelName,
-        account_id: editingLabelAccountId === "" ? null : editingLabelAccountId,
-        is_controllable: editingLabelIsControllable,
-      });
-      setLabels((currentLabels) => currentLabels
-        .map((label) => (label.id === savedLabel.id ? savedLabel : label))
-        .sort((first, second) => first.name.localeCompare(second.name)));
-      setLabelRules((currentRules) => currentRules.map((rule) => (rule.label_id === savedLabel.id
-        ? {
-            ...rule,
-            label_slug: savedLabel.slug,
-            label_name: savedLabel.name,
-            label_account_id: savedLabel.account_id,
-            label_is_controllable: savedLabel.is_controllable,
-            account_id: savedLabel.account_id,
-            account_name: savedLabel.account_name,
-          }
-        : rule)));
-      setDashboardLabelSlugs((currentSlugs) => currentSlugs.map((slug) => (slug === labels.find((label) => label.id === savedLabel.id)?.slug ? savedLabel.slug : slug)));
-      setEditingLabelId(null);
-      setLabelRuleStatus("Label updated.");
-      refreshDashboard();
-    } catch {
-      setLabelRuleError("Could not update that label. Check for duplicate names with the same scope and control type.");
-    } finally {
-      setLabelSaving(false);
-    }
-  }
-
-  async function handleDeleteLabel(label: TransactionLabel) {
-    setLabelRuleStatus(null);
-    setLabelRuleError(null);
-    setLabelDeletingId(label.id);
-    try {
-      await deleteLabel(label.id);
-      setLabels((currentLabels) => currentLabels.filter((currentLabel) => currentLabel.id !== label.id));
-      setLabelRules((currentRules) => currentRules.filter((rule) => rule.label_id !== label.id));
-      setDashboardLabelSlugs((currentSlugs) => currentSlugs.filter((slug) => slug !== label.slug));
-      setLabelRuleLabelId((currentId) => (currentId === label.id ? labels.find((candidate) => candidate.id !== label.id)?.id ?? "" : currentId));
-      if (editingLabelId === label.id) {
-        setEditingLabelId(null);
-      }
-      setLabelRuleStatus(`Deleted ${label.name}. Matching rules were removed and existing transactions are now uncategorized.`);
-      refreshDashboard();
-    } catch {
-      setLabelRuleError("Could not delete that label. System labels cannot be deleted.");
-    } finally {
-      setLabelDeletingId(null);
     }
   }
 
@@ -1591,62 +1508,11 @@ function Home() {
             <div className="label-scope-group" key={group.scope}>
               <strong>{group.scope}</strong>
               <div className="label-pill-list">
-                {group.labels.map((label) => {
-                  const canManageLabel = label.is_system === false;
-                  return (
-                    <div className="label-pill-row" key={label.id}>
-                      {editingLabelId === label.id ? (
-                        <form className="label-edit-form" onSubmit={handleUpdateLabel}>
-                          <label>
-                            <span>Label name</span>
-                            <input value={editingLabelName} onChange={(event) => setEditingLabelName(event.target.value)} />
-                          </label>
-                          <label>
-                            <span>Scope</span>
-                            <select value={editingLabelAccountId} onChange={(event) => setEditingLabelAccountId(event.target.value ? Number(event.target.value) : "")}>
-                              <option value="">Global</option>
-                              {accounts.map((account) => (
-                                <option key={account.id} value={account.id}>{account.name}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            <span>Control type</span>
-                            <select value={editingLabelIsControllable ? "controllable" : "non-controllable"} onChange={(event) => setEditingLabelIsControllable(event.target.value === "controllable")}>
-                              <option value="controllable">Controllable</option>
-                              <option value="non-controllable">Non-controllable</option>
-                            </select>
-                          </label>
-                          <button type="submit" disabled={labelSaving}>Save</button>
-                          <button type="button" className="secondary-action" onClick={() => setEditingLabelId(null)}>Cancel</button>
-                        </form>
-                      ) : (
-                        <>
-                          <span className={`label-pill ${label.is_controllable ? "controllable" : "non-controllable"}`}>
-                            {label.name}
-                          </span>
-                          {canManageLabel ? (
-                            <span className="label-pill-actions">
-                              <button type="button" onClick={() => beginEditLabel(label)}>Edit</button>
-                              <button
-                                type="button"
-                                className="danger-action"
-                                disabled={labelDeletingId === label.id}
-                                onClick={() => {
-                                  if (window.confirm(`Delete ${label.name}? Existing transactions become uncategorized and rules for this label are removed.`)) {
-                                    handleDeleteLabel(label);
-                                  }
-                                }}
-                              >
-                                {labelDeletingId === label.id ? "Deleting..." : "Delete"}
-                              </button>
-                            </span>
-                          ) : null}
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
+                {group.labels.map((label) => (
+                  <span className={`label-pill ${label.is_controllable ? "controllable" : "non-controllable"}`} key={label.id}>
+                    {label.name}
+                  </span>
+                ))}
               </div>
             </div>
           ))}

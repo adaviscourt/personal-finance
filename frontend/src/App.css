@@ -1232,13 +1232,6 @@ button,
   gap: 8px;
 }
 
-.label-pill-row {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-
 .label-pill {
   max-width: 220px;
   padding: 7px 10px;
@@ -1261,47 +1254,6 @@ button,
 .label-pill.non-controllable {
   border-color: color-mix(in oklch, var(--warning) 34%, var(--border));
   background: var(--warning-soft);
-}
-
-.label-pill-actions {
-  display: inline-flex;
-  gap: 5px;
-}
-
-.label-pill-actions button,
-.label-edit-form button {
-  min-height: 30px;
-  padding: 0 9px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--brand);
-  font-size: 0.78rem;
-  font-weight: 850;
-}
-
-.label-pill-actions .danger-action,
-.label-edit-form .danger-action {
-  color: var(--danger);
-}
-
-.label-edit-form .secondary-action {
-  color: var(--muted);
-}
-
-.label-edit-form {
-  display: grid;
-  grid-template-columns: minmax(170px, 1fr) minmax(130px, 0.8fr) minmax(150px, 0.8fr) auto auto;
-  gap: 8px;
-  align-items: end;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-}
-
-.label-edit-form label {
-  min-width: 0;
 }
 
 .match-preview {
