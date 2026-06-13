@@ -1,16 +1,18 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { chromium } from "playwright";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, "..");
+const repoRoot = join(projectRoot, "..");
 const outDir = join(projectRoot, ".pr-screenshots", new Date().toISOString().replace(/[:.]/g, "-"));
 const port = Number(process.env.PR_SCREENSHOT_PORT ?? 4177);
 const apiPort = Number(process.env.PR_SCREENSHOT_API_PORT ?? 4178);
 const appUrl = `http://127.0.0.1:${port}`;
+const publicBaseUrl = process.env.PR_SCREENSHOT_BASE_URL?.replace(/\/+$/, "");
 
 const routes = [
   { path: "/", name: "dashboard" },
@@ -116,6 +118,14 @@ function run(command, args) {
   });
 }
 
+function formatScreenshotPath(filePath) {
+  const pathFromOutDir = relative(outDir, filePath).replaceAll("\\", "/");
+  if (publicBaseUrl) {
+    return `${publicBaseUrl}/${pathFromOutDir}`;
+  }
+  return relative(repoRoot, filePath).replaceAll("\\", "/");
+}
+
 async function launchChromium() {
   try {
     return await chromium.launch();
@@ -150,10 +160,11 @@ try {
   }
 
   await browser.close();
-  await writeFile(join(outDir, "README.md"), files.map((file) => `- ${file}`).join("\n") + "\n");
+  const formattedFiles = files.map(formatScreenshotPath);
+  await writeFile(join(outDir, "README.md"), formattedFiles.map((file) => `- ${file}`).join("\n") + "\n");
 
   console.log("PR_SCREENSHOTS ok");
-  for (const file of files) {
+  for (const file of formattedFiles) {
     console.log(file);
   }
 } finally {
