@@ -325,6 +325,15 @@ export async function createLabelRule(payload: LabelRulePayload): Promise<LabelR
   return response.data;
 }
 
+export async function updateLabelRule(ruleId: number, payload: LabelRulePayload): Promise<LabelRule> {
+  const response = await api.put<LabelRule>(`/transaction-label-rules/${ruleId}`, payload);
+  return response.data;
+}
+
+export async function deleteLabelRule(ruleId: number): Promise<void> {
+  await api.delete(`/transaction-label-rules/${ruleId}`);
+}
+
 export async function previewLabelRuleMatches(payload: LabelRulePayload, limit = 25): Promise<LabelRuleMatchPreview> {
   const response = await api.get<LabelRuleMatchPreview>("/transaction-label-rules/matches", {
     params: {

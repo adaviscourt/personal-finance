@@ -8,6 +8,7 @@ import {
   createLabel,
   createLabelRule,
   createImportTemplate,
+  deleteLabelRule,
   deleteAccount,
   getDashboardSpendingByLabel,
   getDashboardTransactions,
@@ -19,6 +20,7 @@ import {
   prepareImport,
   previewLabelRuleMatches,
   renameAccount,
+  updateLabelRule,
   updateImportTemplate,
   type Account,
   type ConfirmImportResponse,
@@ -54,6 +56,7 @@ type MappingDraft = Record<RequiredMappingField | OptionalSplitField, string>;
 type TransformDraft = Record<(typeof REQUIRED_FIELDS)[number], TemplateTransform>;
 type DashboardSortKey = "date" | "account" | "description" | "label" | "direction" | "amount";
 type SortDirection = "asc" | "desc";
+type DashboardNetPoint = { month: string; amount: number };
 
 const DASHBOARD_SORT_LABELS: Record<DashboardSortKey, string> = {
   date: "Date",
@@ -139,6 +142,22 @@ function formatMonthLabel(month: string): string {
   return `${monthName} ${year}`;
 }
 
+function shiftMonth(month: string, offset: number): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(Date.UTC(year, monthNumber - 1 + offset, 1)).toISOString().slice(0, 7);
+}
+
+function surroundingMonths(month: string): string[] {
+  return Array.from({ length: 7 }, (_, index) => shiftMonth(month, index - 3));
+}
+
+function netTransactionAmount(transactions: DashboardTransactionRow[]): number {
+  return transactions.reduce((total, transaction) => {
+    const amount = Number(transaction.amount);
+    return total + (transaction.direction === "credit" ? amount : -amount);
+  }, 0);
+}
+
 function apiErrorDetail(error: unknown): string | null {
   if (typeof error !== "object" || error === null || !("response" in error)) {
     return null;
@@ -209,11 +228,17 @@ function Home() {
   const [labelRuleStatus, setLabelRuleStatus] = useState<string | null>(null);
   const [labelRuleError, setLabelRuleError] = useState<string | null>(null);
   const [labelRuleSaving, setLabelRuleSaving] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
+  const [editingRuleMatchType, setEditingRuleMatchType] = useState<"contains" | "regex">("contains");
+  const [editingRulePattern, setEditingRulePattern] = useState("");
+  const [editingRuleLabelId, setEditingRuleLabelId] = useState<number | "">("");
+  const [deletingRuleId, setDeletingRuleId] = useState<number | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(initialDashboardMonth);
   const [dashboardAccountIds, setDashboardAccountIds] = useState<number[]>(readStoredDashboardAccountIds);
   const [dashboardLabelSlugs, setDashboardLabelSlugs] = useState<string[]>(readStoredDashboardLabelSlugs);
   const [dashboardLabels, setDashboardLabels] = useState<DashboardSpendingLabel[]>([]);
   const [dashboardTransactions, setDashboardTransactions] = useState<DashboardTransactionRow[]>([]);
+  const [dashboardNetSeries, setDashboardNetSeries] = useState<DashboardNetPoint[]>([]);
   const [dashboardSort, setDashboardSort] = useState<{ key: DashboardSortKey; direction: SortDirection }>({ key: "date", direction: "desc" });
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
@@ -315,23 +340,34 @@ function Home() {
     setDashboardError(null);
     setDashboardLoading(true);
 
+    const netMonths = surroundingMonths(selectedMonth);
+    const comparisonNetMonths = netMonths.filter((month) => month !== selectedMonth);
+
     Promise.all([
       getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds),
       getDashboardTransactions(selectedMonth, {
         accountIds: dashboardAccountIds,
         labelSlugs: dashboardLabelSlugs,
       }),
+      Promise.all(comparisonNetMonths.map((month) => getDashboardTransactions(month, {
+        accountIds: dashboardAccountIds,
+        labelSlugs: dashboardLabelSlugs,
+      }))),
     ])
-      .then(([spendingDashboard, transactionDashboard]) => {
+      .then(([spendingDashboard, transactionDashboard, netDashboards]) => {
         if (active) {
           setDashboardLabels(spendingDashboard.labels);
           setDashboardTransactions(transactionDashboard.transactions);
+          const netByMonth = new Map(comparisonNetMonths.map((month, index) => [month, netTransactionAmount(netDashboards[index].transactions)]));
+          netByMonth.set(selectedMonth, netTransactionAmount(transactionDashboard.transactions));
+          setDashboardNetSeries(netMonths.map((month) => ({ month, amount: netByMonth.get(month) ?? 0 })));
         }
       })
       .catch(() => {
         if (active) {
           setDashboardLabels([]);
           setDashboardTransactions([]);
+          setDashboardNetSeries([]);
           setDashboardError("Could not load dashboard transactions for the selected filters.");
         }
       })
@@ -368,31 +404,33 @@ function Home() {
     }
     return groups;
   }, []);
-  const dashboardChartData = filteredDashboardLabels.map((label) => ({
-    name: label.label_name,
-    value: Number(label.amount),
-    amount: label.amount,
-  }));
+  const dashboardChartData = filteredDashboardLabels
+    .map((label) => ({
+      name: label.label_name,
+      value: Number(label.amount),
+      amount: label.amount,
+    }))
+    .sort((first, second) => second.value - first.value || first.name.localeCompare(second.name));
   const dashboardTotal = dashboardChartData.reduce((total, item) => total + item.value, 0);
   const dashboardKpis = dashboardTransactions.reduce(
     (totals, transaction) => {
       const amount = Number(transaction.amount);
       if (transaction.direction === "credit") {
-        const creditBucket = transaction.label.is_controllable ? "controllable" : "nonControllable";
         return {
           ...totals,
           creditAmount: totals.creditAmount + amount,
           creditCount: totals.creditCount + 1,
-          [creditBucket]: {
-            amount: totals[creditBucket].amount + amount,
-            count: totals[creditBucket].count + 1,
-          },
         };
       }
+      const debitBucket = transaction.label.is_controllable ? "controllable" : "nonControllable";
       return {
         ...totals,
         debitAmount: totals.debitAmount + amount,
         debitCount: totals.debitCount + 1,
+        [debitBucket]: {
+          amount: totals[debitBucket].amount + amount,
+          count: totals[debitBucket].count + 1,
+        },
       };
     },
     {
@@ -408,6 +446,16 @@ function Home() {
   const dashboardNetTone = dashboardNetAmount > 0 ? "positive" : dashboardNetAmount < 0 ? "negative" : "neutral";
   const dashboardNetArrow = dashboardNetAmount > 0 ? "▲" : dashboardNetAmount < 0 ? "▼" : "•";
   const dashboardMaxAmount = Math.max(...dashboardChartData.map((item) => item.value), 1);
+  const dashboardNetValues = dashboardNetSeries.map((point) => point.amount);
+  const dashboardNetMin = Math.min(...dashboardNetValues, 0);
+  const dashboardNetMax = Math.max(...dashboardNetValues, 0);
+  const dashboardNetRange = Math.max(dashboardNetMax - dashboardNetMin, 1);
+  const dashboardNetPolyline = dashboardNetSeries.map((point, index) => {
+    const x = dashboardNetSeries.length === 1 ? 150 : (index / (dashboardNetSeries.length - 1)) * 300;
+    const y = 130 - ((point.amount - dashboardNetMin) / dashboardNetRange) * 110;
+    return `${x},${y}`;
+  }).join(" ");
+  const dashboardNetZeroY = 130 - ((0 - dashboardNetMin) / dashboardNetRange) * 110;
   const allDashboardAccountsSelected = dashboardAccountIds.length === 0 || dashboardAccountIds.length === accounts.length;
   const allDashboardLabelsSelected = dashboardLabelSlugs.length === 0 || dashboardLabelSlugs.length === labels.length;
   const dashboardAccountSummary =
@@ -449,20 +497,30 @@ function Home() {
   function refreshDashboard() {
     setDashboardError(null);
     setDashboardLoading(true);
+    const netMonths = surroundingMonths(selectedMonth);
+    const comparisonNetMonths = netMonths.filter((month) => month !== selectedMonth);
     Promise.all([
       getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds),
       getDashboardTransactions(selectedMonth, {
         accountIds: dashboardAccountIds,
         labelSlugs: dashboardLabelSlugs,
       }),
+      Promise.all(comparisonNetMonths.map((month) => getDashboardTransactions(month, {
+        accountIds: dashboardAccountIds,
+        labelSlugs: dashboardLabelSlugs,
+      }))),
     ])
-      .then(([spendingDashboard, transactionDashboard]) => {
+      .then(([spendingDashboard, transactionDashboard, netDashboards]) => {
         setDashboardLabels(spendingDashboard.labels);
         setDashboardTransactions(transactionDashboard.transactions);
+        const netByMonth = new Map(comparisonNetMonths.map((month, index) => [month, netTransactionAmount(netDashboards[index].transactions)]));
+        netByMonth.set(selectedMonth, netTransactionAmount(transactionDashboard.transactions));
+        setDashboardNetSeries(netMonths.map((month) => ({ month, amount: netByMonth.get(month) ?? 0 })));
       })
       .catch(() => {
         setDashboardLabels([]);
         setDashboardTransactions([]);
+        setDashboardNetSeries([]);
         setDashboardError("Could not load dashboard transactions for the selected filters.");
       })
       .finally(() => {
@@ -477,7 +535,7 @@ function Home() {
   }
 
   function formatCurrency(amount: number): string {
-    return `$${amount.toFixed(2)}`;
+    return `${amount < 0 ? "-" : ""}$${Math.abs(amount).toFixed(2)}`;
   }
 
   function toggleDashboardAccount(accountId: number, checked: boolean) {
@@ -805,6 +863,70 @@ function Home() {
     }
   }
 
+  function beginEditRule(rule: LabelRule) {
+    setEditingRuleId(rule.id);
+    setEditingRuleMatchType(rule.match_type);
+    setEditingRulePattern(rule.pattern);
+    setEditingRuleLabelId(rule.label_id);
+    setLabelRuleStatus(null);
+    setLabelRuleError(null);
+  }
+
+  async function handleUpdateLabelRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLabelRuleStatus(null);
+    setLabelRuleError(null);
+
+    if (editingRuleId === null) {
+      return;
+    }
+    if (!editingRulePattern.trim()) {
+      setLabelRuleError("Enter description text to match.");
+      return;
+    }
+    if (editingRuleLabelId === "") {
+      setLabelRuleError("Choose one of the fixed labels.");
+      return;
+    }
+
+    setLabelRuleSaving(true);
+    try {
+      const savedRule = await updateLabelRule(editingRuleId, {
+        label_id: editingRuleLabelId,
+        match_field: "description",
+        match_type: editingRuleMatchType,
+        pattern: editingRulePattern,
+      });
+      setLabelRules((currentRules) => currentRules.map((rule) => (rule.id === savedRule.id ? savedRule : rule)));
+      setEditingRuleId(null);
+      setLabelRuleStatus(`Rule updated. Applied to ${savedRule.applied_count ?? 0} existing transactions.`);
+      refreshDashboard();
+    } catch {
+      setLabelRuleError("Could not update that rule. Use a predefined label and valid match text.");
+    } finally {
+      setLabelRuleSaving(false);
+    }
+  }
+
+  async function handleDeleteLabelRule(rule: LabelRule) {
+    setLabelRuleStatus(null);
+    setLabelRuleError(null);
+    setDeletingRuleId(rule.id);
+    try {
+      await deleteLabelRule(rule.id);
+      setLabelRules((currentRules) => currentRules.filter((currentRule) => currentRule.id !== rule.id));
+      if (editingRuleId === rule.id) {
+        setEditingRuleId(null);
+      }
+      setLabelRuleStatus("Rule deleted. Matching labels it applied were removed.");
+      refreshDashboard();
+    } catch {
+      setLabelRuleError("Could not delete that rule.");
+    } finally {
+      setDeletingRuleId(null);
+    }
+  }
+
   return (
     <main className="app-shell">
       <header className="hero">
@@ -887,12 +1009,7 @@ function Home() {
                 <span>Debit activity</span>
                 <strong>{formatCurrency(dashboardKpis.debitAmount)}</strong>
                 <em>{dashboardKpis.debitCount} debit row(s)</em>
-              </article>
-              <article>
-                <span>Credit activity</span>
-                <strong>{formatCurrency(dashboardKpis.creditAmount)}</strong>
-                <em>{dashboardKpis.creditCount} credit row(s)</em>
-                <div className="credit-split" aria-label="Credit activity split">
+                <div className="credit-split" aria-label="Debit activity split">
                   <div>
                     <span>Controllable</span>
                     <b>{formatCurrency(dashboardKpis.controllable.amount)}</b>
@@ -904,6 +1021,11 @@ function Home() {
                     <em>{dashboardKpis.nonControllable.count} row(s)</em>
                   </div>
                 </div>
+              </article>
+              <article>
+                <span>Credit activity</span>
+                <strong>{formatCurrency(dashboardKpis.creditAmount)}</strong>
+                <em>{dashboardKpis.creditCount} credit row(s)</em>
               </article>
               <article>
                 <span>Net activity</span>
@@ -950,33 +1072,59 @@ function Home() {
           </div>
         )}
         {filteredDashboardLabels.length === 0 ? null : (
-          <div className="dashboard-grid">
-            <div className="chart-card" aria-label="Spending by label summary">
-              <h3>Spending summary</h3>
-              <div className="spending-bars">
-                {dashboardChartData.map((item, index) => (
-                  <div key={item.name}>
-                    <span>{item.name}</span>
-                    <i
-                      aria-hidden="true"
-                      style={{
+            <div className="dashboard-grid">
+              <div className="chart-card" aria-label="Spending by label summary">
+                <h3>Spending summary</h3>
+                <div className="spending-bars">
+                  {dashboardChartData.map((item, index) => (
+                    <div key={item.name}>
+                      <span>{item.name}</span>
+                      <em>{formatCurrency(item.value)}</em>
+                      <i
+                        aria-hidden="true"
+                        style={{
                         background: CHART_COLORS[index % CHART_COLORS.length],
                         inlineSize: `${Math.max((item.value / dashboardMaxAmount) * 100, 4)}%`,
                       }}
                     />
                   </div>
+                  ))}
+                </div>
+              <strong>Total debit spending: {formatCurrency(dashboardTotal)}</strong>
+            </div>
+            <div className="net-activity-card" aria-label="Net activity trend">
+              <div className="net-activity-header">
+                <h3>Net activity</h3>
+                <span>{formatMonthLabel(shiftMonth(selectedMonth, -3))} to {formatMonthLabel(shiftMonth(selectedMonth, 3))}</span>
+              </div>
+              <svg className="net-activity-chart" viewBox="0 0 300 150" role="img" aria-label="Net activity over seven months">
+                <line x1="0" x2="300" y1={dashboardNetZeroY} y2={dashboardNetZeroY} />
+                <polyline points={dashboardNetPolyline} />
+                {dashboardNetSeries.map((point, index) => {
+                  const x = dashboardNetSeries.length === 1 ? 150 : (index / (dashboardNetSeries.length - 1)) * 300;
+                  const y = 130 - ((point.amount - dashboardNetMin) / dashboardNetRange) * 110;
+                  const tooltipX = Math.min(Math.max(x - 43, 2), 212);
+                  const tooltipY = Math.max(y - 33, 2);
+                  return (
+                    <g key={point.month} className="net-activity-point" tabIndex={0} aria-label={`${formatMonthLabel(point.month)}: ${formatCurrency(point.amount)}`}>
+                      <circle className="net-activity-hit-area" cx={x} cy={y} r="12" />
+                      <circle cx={x} cy={y} r={point.month === selectedMonth ? 4.5 : 3.5} />
+                      <g className="net-activity-tooltip" aria-hidden="true">
+                        <rect x={tooltipX} y={tooltipY} width="86" height="24" rx="4" />
+                        <text x={tooltipX + 43} y={tooltipY + 16}>{formatCurrency(point.amount)}</text>
+                      </g>
+                    </g>
+                  );
+                })}
+              </svg>
+              <div className="net-activity-labels">
+                {dashboardNetSeries.map((point) => (
+                  <span key={point.month} aria-label={`${formatMonthLabel(point.month)} net ${formatCurrency(point.amount)}`}>
+                    {point.month.slice(5)}
+                  </span>
                 ))}
               </div>
-              <strong>Total debit spending: ${dashboardTotal.toFixed(2)}</strong>
-            </div>
-            <div className="dashboard-legend" aria-label="Spending by label totals">
-              {filteredDashboardLabels.map((label, index) => (
-                <div key={label.label_slug}>
-                  <span style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} />
-                  <strong>{label.label_name}</strong>
-                  <em>${Number(label.amount).toFixed(2)}</em>
-                </div>
-              ))}
+              <strong>{formatCurrency(dashboardNetMin)} to {formatCurrency(dashboardNetMax)}</strong>
             </div>
           </div>
         )}
@@ -1513,9 +1661,50 @@ function Home() {
           {labelRules.length === 0 ? <p>No label rules yet.</p> : null}
           {labelRules.map((rule) => (
             <article key={rule.id}>
-              <strong>{rule.label_name}</strong>
-              <span>{rule.account_name ?? "Global rule"} - description {rule.match_type === "regex" ? "matches regex" : "contains"} "{rule.pattern}"</span>
-              <span>{rule.label_is_controllable ? "Controllable" : "Non-controllable"}</span>
+              {editingRuleId === rule.id ? (
+                <form className="rule-edit-form" onSubmit={handleUpdateLabelRule}>
+                  <label>
+                    <span>Match type</span>
+                    <select value={editingRuleMatchType} onChange={(event) => setEditingRuleMatchType(event.target.value as "contains" | "regex")}>
+                      <option value="contains">Contains</option>
+                      <option value="regex">Regex</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Match pattern</span>
+                    <input value={editingRulePattern} onChange={(event) => setEditingRulePattern(event.target.value)} />
+                  </label>
+                  <label>
+                    <span>Label</span>
+                    <select value={editingRuleLabelId} onChange={(event) => setEditingRuleLabelId(event.target.value ? Number(event.target.value) : "")}>
+                      {labels.map((label) => (
+                        <option key={label.id} value={label.id}>
+                          {label.name}{label.account_name ? ` (${label.account_name})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="submit" disabled={labelRuleSaving}>Save</button>
+                  <button type="button" className="secondary-action" onClick={() => setEditingRuleId(null)}>Cancel</button>
+                </form>
+              ) : (
+                <>
+                  <strong>{rule.label_name}</strong>
+                  <span>{rule.account_name ?? "Global rule"} - description {rule.match_type === "regex" ? "matches regex" : "contains"} "{rule.pattern}"</span>
+                  <span>{rule.label_is_controllable ? "Controllable" : "Non-controllable"}</span>
+                  <span className="rule-actions">
+                    <button type="button" onClick={() => beginEditRule(rule)}>Edit</button>
+                    <button
+                      type="button"
+                      className="danger-action"
+                      disabled={deletingRuleId === rule.id}
+                      onClick={() => handleDeleteLabelRule(rule)}
+                    >
+                      {deletingRuleId === rule.id ? "Deleting..." : "Delete"}
+                    </button>
+                  </span>
+                </>
+              )}
             </article>
           ))}
         </div>

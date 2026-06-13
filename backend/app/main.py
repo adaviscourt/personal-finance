@@ -699,6 +699,7 @@ def apply_label_rules_to_transactions(session: Session, transactions: list[Trans
             continue
         matching_rule = next((rule for rule in rules if label_rule_matches(rule, transaction)), None)
         transaction.label_id = matching_rule.label_id if matching_rule is not None else uncategorized.id
+        transaction.label_rule_id = matching_rule.id if matching_rule is not None else None
 
 
 def apply_label_rule_to_existing_transactions(session: Session, rule: TransactionLabelRule) -> int:
@@ -709,9 +710,25 @@ def apply_label_rule_to_existing_transactions(session: Session, rule: Transactio
         is_unlabeled = transaction.label_id is None or transaction.label_id == uncategorized.id
         if is_unlabeled and label_rule_matches(rule, transaction):
             transaction.label_id = rule.label_id
+            transaction.label_rule_id = rule.id
             session.add(transaction)
             applied_count += 1
     return applied_count
+
+
+def clear_label_rule_assignments(session: Session, rule: TransactionLabelRule) -> int:
+    uncategorized = get_uncategorized_label(session)
+    transactions = session.exec(select(Transaction)).all()
+    cleared_count = 0
+    for transaction in transactions:
+        is_rule_owned = transaction.label_rule_id == rule.id
+        is_legacy_match = transaction.label_rule_id is None and transaction.label_id == rule.label_id and label_rule_matches(rule, transaction)
+        if is_rule_owned or is_legacy_match:
+            transaction.label_id = uncategorized.id
+            transaction.label_rule_id = None
+            session.add(transaction)
+            cleared_count += 1
+    return cleared_count
 
 
 def raw_rows_to_transactions(upload: StoredUploadFile, raw_rows: list[RawImportRow], config: ImportTemplateConfig) -> list[Transaction]:
@@ -1136,6 +1153,46 @@ def create_transaction_label_rule(payload: LabelRulePayload) -> LabelRuleRespons
         session.refresh(label)
         account = session.get(Account, rule.account_id) if rule.account_id is not None else None
         return serialize_label_rule(rule, label, account, applied_count)
+
+
+@app.put("/transaction-label-rules/{rule_id}")
+def update_transaction_label_rule(rule_id: int, payload: LabelRulePayload) -> LabelRuleResponse:
+    with Session(engine) as session:
+        rule = session.get(TransactionLabelRule, rule_id)
+        if rule is None:
+            raise HTTPException(status_code=404, detail="Label rule not found.")
+        label = session.get(Label, payload.label_id)
+        if label is None:
+            raise HTTPException(status_code=404, detail="Label not found.")
+
+        clear_label_rule_assignments(session, rule)
+        rule.label_id = payload.label_id
+        rule.account_id = label.account_id
+        rule.match_field = payload.match_field
+        rule.match_type = payload.match_type
+        rule.pattern = payload.pattern
+        session.add(rule)
+        session.commit()
+        session.refresh(rule)
+        applied_count = apply_label_rule_to_existing_transactions(session, rule)
+        session.commit()
+        session.refresh(rule)
+        session.refresh(label)
+        account = session.get(Account, rule.account_id) if rule.account_id is not None else None
+        return serialize_label_rule(rule, label, account, applied_count)
+
+
+@app.delete("/transaction-label-rules/{rule_id}", status_code=204)
+def delete_transaction_label_rule(rule_id: int) -> Response:
+    with Session(engine) as session:
+        rule = session.get(TransactionLabelRule, rule_id)
+        if rule is None:
+            raise HTTPException(status_code=404, detail="Label rule not found.")
+        clear_label_rule_assignments(session, rule)
+        session.commit()
+        session.delete(rule)
+        session.commit()
+    return Response(status_code=204)
 
 
 @app.post("/import-templates", status_code=201)

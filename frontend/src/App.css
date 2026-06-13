@@ -693,7 +693,7 @@ button,
 }
 
 .chart-card,
-.dashboard-legend {
+.net-activity-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface-panel);
@@ -719,14 +719,21 @@ button,
 
 .spending-bars div {
   display: grid;
-  gap: 7px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 12px;
   align-items: center;
 }
 
-.spending-bars span {
+.spending-bars span,
+.spending-bars em {
   color: var(--ink);
   font-size: 0.94rem;
   font-weight: 850;
+}
+
+.spending-bars em {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
 }
 
 .spending-bars i {
@@ -737,37 +744,110 @@ button,
   border-radius: 999px;
 }
 
-.dashboard-legend {
+.net-activity-card {
   display: grid;
-  align-content: center;
-  gap: 0;
-  padding: 8px 0;
+  gap: 12px;
+  padding: 16px;
 }
 
-.dashboard-legend div {
-  display: grid;
-  grid-template-columns: 14px 1fr auto;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
+.net-activity-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: baseline;
+  justify-content: space-between;
 }
 
-.dashboard-legend div:last-child {
-  border-bottom: 0;
+.net-activity-header h3 {
+  margin: 0;
 }
 
-.dashboard-legend span {
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
+.net-activity-header span,
+.net-activity-labels span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
-.dashboard-legend em {
+.net-activity-chart {
+  width: 100%;
+  min-height: 180px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-panel) 100%);
+  overflow: visible;
+}
+
+.net-activity-chart line {
+  stroke: var(--border-strong);
+  stroke-dasharray: 5 5;
+  stroke-width: 1.5;
+}
+
+.net-activity-chart polyline {
+  fill: none;
+  stroke: var(--brand);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3.5;
+}
+
+.net-activity-chart circle {
+  fill: var(--surface);
+  stroke: var(--brand);
+  stroke-width: 3;
+}
+
+.net-activity-point {
+  cursor: default;
+  outline: none;
+}
+
+.net-activity-chart .net-activity-hit-area {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 0;
+}
+
+.net-activity-point:hover circle:not(.net-activity-hit-area) {
+  fill: var(--brand-soft);
+  stroke: var(--brand-dark);
+}
+
+.net-activity-tooltip {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease-out;
+}
+
+.net-activity-point:hover .net-activity-tooltip,
+.net-activity-point:focus .net-activity-tooltip {
+  opacity: 1;
+}
+
+.net-activity-tooltip rect {
+  fill: var(--ink);
+  stroke: none;
+}
+
+.net-activity-tooltip text {
+  fill: white;
+  font-size: 0.8rem;
+  font-weight: 850;
+  text-anchor: middle;
+}
+
+.net-activity-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.net-activity-card > strong {
   color: var(--ink);
-  font-style: normal;
   font-variant-numeric: tabular-nums;
   font-weight: 850;
+  text-align: right;
 }
 
 .upload-form button:disabled,
@@ -1237,6 +1317,44 @@ button,
 
 .rule-list article:last-child {
   border-bottom: 0;
+}
+
+.rule-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.rule-actions button,
+.rule-edit-form button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--brand);
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.rule-actions .danger-action {
+  color: var(--danger);
+}
+
+.rule-edit-form .secondary-action {
+  color: var(--muted);
+}
+
+.rule-edit-form {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(140px, 0.7fr) minmax(220px, 1.2fr) minmax(220px, 1fr) auto auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.rule-edit-form label {
+  min-width: 0;
 }
 
 .table-wrap {
