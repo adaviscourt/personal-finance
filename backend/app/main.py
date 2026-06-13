@@ -1138,6 +1138,43 @@ def create_transaction_label_rule(payload: LabelRulePayload) -> LabelRuleRespons
         return serialize_label_rule(rule, label, account, applied_count)
 
 
+@app.put("/transaction-label-rules/{rule_id}")
+def update_transaction_label_rule(rule_id: int, payload: LabelRulePayload) -> LabelRuleResponse:
+    with Session(engine) as session:
+        rule = session.get(TransactionLabelRule, rule_id)
+        if rule is None:
+            raise HTTPException(status_code=404, detail="Label rule not found.")
+        label = session.get(Label, payload.label_id)
+        if label is None:
+            raise HTTPException(status_code=404, detail="Label not found.")
+
+        rule.label_id = payload.label_id
+        rule.account_id = label.account_id
+        rule.match_field = payload.match_field
+        rule.match_type = payload.match_type
+        rule.pattern = payload.pattern
+        session.add(rule)
+        session.commit()
+        session.refresh(rule)
+        applied_count = apply_label_rule_to_existing_transactions(session, rule)
+        session.commit()
+        session.refresh(rule)
+        session.refresh(label)
+        account = session.get(Account, rule.account_id) if rule.account_id is not None else None
+        return serialize_label_rule(rule, label, account, applied_count)
+
+
+@app.delete("/transaction-label-rules/{rule_id}", status_code=204)
+def delete_transaction_label_rule(rule_id: int) -> Response:
+    with Session(engine) as session:
+        rule = session.get(TransactionLabelRule, rule_id)
+        if rule is None:
+            raise HTTPException(status_code=404, detail="Label rule not found.")
+        session.delete(rule)
+        session.commit()
+    return Response(status_code=204)
+
+
 @app.post("/import-templates", status_code=201)
 def create_import_template(payload: ImportTemplatePayload) -> ImportTemplateResponse:
     template = ImportTemplate(

@@ -6,7 +6,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from app.database import Account, Label, Transaction, engine, init_db
+from app.database import Account, Label, Transaction, TransactionLabelRule, engine, init_db
 from app.main import app, duplicate_fingerprint, normalize_description
 
 
@@ -229,6 +229,55 @@ def test_account_scoped_rules_do_not_apply_to_other_accounts() -> None:
         second_transaction = session.exec(select(Transaction).where(Transaction.account_id == second_account.id, Transaction.description == description)).one()
     assert first_transaction.label_id == auto_id
     assert second_transaction.label_id in {None, uncategorized_id}
+
+
+def test_updates_and_deletes_label_rules() -> None:
+    client = TestClient(app)
+    account = create_account(f"Editable Rule Account {uuid4()}")
+    dining_id = label_id("dining")
+    groceries_id = label_id("groceries")
+    description = f"Editable Coffee {uuid4()}"
+    with Session(engine) as session:
+        transaction = Transaction(
+            account_id=account.id or 0,
+            transaction_date=date.fromisoformat("2026-09-01"),
+            transaction_month="2026-09",
+            description=description,
+            normalized_description=normalize_description(description),
+            merchant="Coffee shop",
+            amount=Decimal("7.00"),
+            direction="debit",
+            duplicate_fingerprint=f"editable-rule-{uuid4()}",
+        )
+        session.add(transaction)
+        session.commit()
+
+    create_response = client.post(
+        "/transaction-label-rules",
+        json={"label_id": dining_id, "match_type": "contains", "pattern": "Cafe"},
+    )
+    assert create_response.status_code == 201
+    rule_id = create_response.json()["id"]
+
+    update_response = client.put(
+        f"/transaction-label-rules/{rule_id}",
+        json={"label_id": groceries_id, "match_type": "regex", "pattern": description},
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["label_id"] == groceries_id
+    assert update_response.json()["match_type"] == "regex"
+    assert update_response.json()["pattern"] == description
+    assert update_response.json()["applied_count"] == 1
+    with Session(engine) as session:
+        transaction = session.exec(select(Transaction).where(Transaction.description == description)).one()
+    assert transaction.label_id == groceries_id
+
+    delete_response = client.delete(f"/transaction-label-rules/{rule_id}")
+
+    assert delete_response.status_code == 204
+    with Session(engine) as session:
+        assert session.get(TransactionLabelRule, rule_id) is None
 
 
 def test_new_rule_applies_to_matching_existing_transactions() -> None:

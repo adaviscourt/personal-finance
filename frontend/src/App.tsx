@@ -8,6 +8,7 @@ import {
   createLabel,
   createLabelRule,
   createImportTemplate,
+  deleteLabelRule,
   deleteAccount,
   getDashboardSpendingByLabel,
   getDashboardTransactions,
@@ -19,6 +20,7 @@ import {
   prepareImport,
   previewLabelRuleMatches,
   renameAccount,
+  updateLabelRule,
   updateImportTemplate,
   type Account,
   type ConfirmImportResponse,
@@ -226,6 +228,11 @@ function Home() {
   const [labelRuleStatus, setLabelRuleStatus] = useState<string | null>(null);
   const [labelRuleError, setLabelRuleError] = useState<string | null>(null);
   const [labelRuleSaving, setLabelRuleSaving] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
+  const [editingRuleMatchType, setEditingRuleMatchType] = useState<"contains" | "regex">("contains");
+  const [editingRulePattern, setEditingRulePattern] = useState("");
+  const [editingRuleLabelId, setEditingRuleLabelId] = useState<number | "">("");
+  const [deletingRuleId, setDeletingRuleId] = useState<number | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(initialDashboardMonth);
   const [dashboardAccountIds, setDashboardAccountIds] = useState<number[]>(readStoredDashboardAccountIds);
   const [dashboardLabelSlugs, setDashboardLabelSlugs] = useState<string[]>(readStoredDashboardLabelSlugs);
@@ -853,6 +860,69 @@ function Home() {
       setLabelRuleError("Could not save that rule. Use a predefined label and valid match text.");
     } finally {
       setLabelRuleSaving(false);
+    }
+  }
+
+  function beginEditRule(rule: LabelRule) {
+    setEditingRuleId(rule.id);
+    setEditingRuleMatchType(rule.match_type);
+    setEditingRulePattern(rule.pattern);
+    setEditingRuleLabelId(rule.label_id);
+    setLabelRuleStatus(null);
+    setLabelRuleError(null);
+  }
+
+  async function handleUpdateLabelRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLabelRuleStatus(null);
+    setLabelRuleError(null);
+
+    if (editingRuleId === null) {
+      return;
+    }
+    if (!editingRulePattern.trim()) {
+      setLabelRuleError("Enter description text to match.");
+      return;
+    }
+    if (editingRuleLabelId === "") {
+      setLabelRuleError("Choose one of the fixed labels.");
+      return;
+    }
+
+    setLabelRuleSaving(true);
+    try {
+      const savedRule = await updateLabelRule(editingRuleId, {
+        label_id: editingRuleLabelId,
+        match_field: "description",
+        match_type: editingRuleMatchType,
+        pattern: editingRulePattern,
+      });
+      setLabelRules((currentRules) => currentRules.map((rule) => (rule.id === savedRule.id ? savedRule : rule)));
+      setEditingRuleId(null);
+      setLabelRuleStatus(`Rule updated. Applied to ${savedRule.applied_count ?? 0} existing transactions.`);
+      refreshDashboard();
+    } catch {
+      setLabelRuleError("Could not update that rule. Use a predefined label and valid match text.");
+    } finally {
+      setLabelRuleSaving(false);
+    }
+  }
+
+  async function handleDeleteLabelRule(rule: LabelRule) {
+    setLabelRuleStatus(null);
+    setLabelRuleError(null);
+    setDeletingRuleId(rule.id);
+    try {
+      await deleteLabelRule(rule.id);
+      setLabelRules((currentRules) => currentRules.filter((currentRule) => currentRule.id !== rule.id));
+      if (editingRuleId === rule.id) {
+        setEditingRuleId(null);
+      }
+      setLabelRuleStatus("Rule deleted. Existing transaction labels were not changed.");
+    } catch {
+      setLabelRuleError("Could not delete that rule.");
+    } finally {
+      setDeletingRuleId(null);
     }
   }
 
@@ -1590,9 +1660,50 @@ function Home() {
           {labelRules.length === 0 ? <p>No label rules yet.</p> : null}
           {labelRules.map((rule) => (
             <article key={rule.id}>
-              <strong>{rule.label_name}</strong>
-              <span>{rule.account_name ?? "Global rule"} - description {rule.match_type === "regex" ? "matches regex" : "contains"} "{rule.pattern}"</span>
-              <span>{rule.label_is_controllable ? "Controllable" : "Non-controllable"}</span>
+              {editingRuleId === rule.id ? (
+                <form className="rule-edit-form" onSubmit={handleUpdateLabelRule}>
+                  <label>
+                    <span>Match type</span>
+                    <select value={editingRuleMatchType} onChange={(event) => setEditingRuleMatchType(event.target.value as "contains" | "regex")}>
+                      <option value="contains">Contains</option>
+                      <option value="regex">Regex</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Match pattern</span>
+                    <input value={editingRulePattern} onChange={(event) => setEditingRulePattern(event.target.value)} />
+                  </label>
+                  <label>
+                    <span>Label</span>
+                    <select value={editingRuleLabelId} onChange={(event) => setEditingRuleLabelId(event.target.value ? Number(event.target.value) : "")}>
+                      {labels.map((label) => (
+                        <option key={label.id} value={label.id}>
+                          {label.name}{label.account_name ? ` (${label.account_name})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="submit" disabled={labelRuleSaving}>Save</button>
+                  <button type="button" className="secondary-action" onClick={() => setEditingRuleId(null)}>Cancel</button>
+                </form>
+              ) : (
+                <>
+                  <strong>{rule.label_name}</strong>
+                  <span>{rule.account_name ?? "Global rule"} - description {rule.match_type === "regex" ? "matches regex" : "contains"} "{rule.pattern}"</span>
+                  <span>{rule.label_is_controllable ? "Controllable" : "Non-controllable"}</span>
+                  <span className="rule-actions">
+                    <button type="button" onClick={() => beginEditRule(rule)}>Edit</button>
+                    <button
+                      type="button"
+                      className="danger-action"
+                      disabled={deletingRuleId === rule.id}
+                      onClick={() => handleDeleteLabelRule(rule)}
+                    >
+                      {deletingRuleId === rule.id ? "Deleting..." : "Delete"}
+                    </button>
+                  </span>
+                </>
+              )}
             </article>
           ))}
         </div>

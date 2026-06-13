@@ -10,6 +10,7 @@ import {
   createLabelRule,
   createImportTemplate,
   deleteAccount,
+  deleteLabelRule,
   getDashboardSpendingByLabel,
   getDashboardTransactions,
   listAccounts,
@@ -20,6 +21,7 @@ import {
   previewLabelRuleMatches,
   prepareImport,
   renameAccount,
+  updateLabelRule,
   updateImportTemplate,
 } from "./api/client";
 
@@ -30,6 +32,7 @@ vi.mock("./api/client", () => ({
   createLabelRule: vi.fn(),
   createImportTemplate: vi.fn(),
   deleteAccount: vi.fn(),
+  deleteLabelRule: vi.fn(),
   getDashboardSpendingByLabel: vi.fn(),
   getDashboardTransactions: vi.fn(),
   listAccounts: vi.fn(),
@@ -40,6 +43,7 @@ vi.mock("./api/client", () => ({
   previewLabelRuleMatches: vi.fn(),
   prepareImport: vi.fn(),
   renameAccount: vi.fn(),
+  updateLabelRule: vi.fn(),
   updateImportTemplate: vi.fn(),
 }));
 
@@ -49,6 +53,7 @@ const mockedCreateLabel = vi.mocked(createLabel);
 const mockedCreateLabelRule = vi.mocked(createLabelRule);
 const mockedCreateImportTemplate = vi.mocked(createImportTemplate);
 const mockedDeleteAccount = vi.mocked(deleteAccount);
+const mockedDeleteLabelRule = vi.mocked(deleteLabelRule);
 const mockedGetDashboardSpendingByLabel = vi.mocked(getDashboardSpendingByLabel);
 const mockedGetDashboardTransactions = vi.mocked(getDashboardTransactions);
 const mockedListAccounts = vi.mocked(listAccounts);
@@ -59,6 +64,7 @@ const mockedPreviewCsv = vi.mocked(previewCsv);
 const mockedPreviewLabelRuleMatches = vi.mocked(previewLabelRuleMatches);
 const mockedPrepareImport = vi.mocked(prepareImport);
 const mockedRenameAccount = vi.mocked(renameAccount);
+const mockedUpdateLabelRule = vi.mocked(updateLabelRule);
 const mockedUpdateImportTemplate = vi.mocked(updateImportTemplate);
 
 const testStorage = new Map<string, string>();
@@ -116,16 +122,19 @@ describe("App", () => {
     mockedCreateLabel.mockReset();
     mockedCreateAccount.mockReset();
     mockedDeleteAccount.mockReset();
+    mockedDeleteLabelRule.mockReset();
     mockedCreateImportTemplate.mockReset();
     mockedConfirmImport.mockReset();
     mockedUpdateImportTemplate.mockReset();
     mockedPrepareImport.mockReset();
     mockedRenameAccount.mockReset();
+    mockedUpdateLabelRule.mockReset();
     mockedGetDashboardSpendingByLabel.mockReset();
     mockedGetDashboardTransactions.mockReset();
     mockedGetDashboardSpendingByLabel.mockResolvedValue({ month: "2026-01", labels: [] });
     mockedGetDashboardTransactions.mockResolvedValue({ month: "2026-01", transactions: [] });
     mockedPreviewLabelRuleMatches.mockResolvedValue({ total_count: 0, returned_count: 0, rows: [] });
+    mockedDeleteLabelRule.mockResolvedValue();
   });
 
   it("renders primary module navigation and a dashboard-only home route", async () => {
@@ -716,6 +725,59 @@ describe("App", () => {
     expect(mockedCreateLabelRule).toHaveBeenCalledWith({ label_id: 8, match_field: "description", match_type: "regex", pattern: "Bistro" });
     expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), []);
     expect(mockedGetDashboardTransactions).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), { accountIds: [], labelSlugs: [] });
+  });
+
+  it("edits and deletes label rules", async () => {
+    mockedListLabelRules.mockResolvedValue([
+      {
+        id: 3,
+        label_id: 2,
+        label_slug: "dining",
+        label_name: "Dining",
+        label_account_id: null,
+        label_is_controllable: true,
+        account_id: null,
+        account_name: null,
+        match_field: "description",
+        match_type: "contains",
+        pattern: "Cafe",
+        created_at: "2026-01-01T00:00:00+00:00",
+      },
+    ]);
+    mockedUpdateLabelRule.mockResolvedValue({
+      id: 3,
+      label_id: 1,
+      label_slug: "uncategorized",
+      label_name: "Uncategorized",
+      label_account_id: null,
+      label_is_controllable: false,
+      account_id: null,
+      account_name: null,
+      match_field: "description",
+      match_type: "regex",
+      pattern: "Coffee|Cafe",
+      created_at: "2026-01-01T00:00:00+00:00",
+      applied_count: 4,
+    });
+
+    renderApp("/labeling");
+
+    expect(await screen.findByText('Global rule - description contains "Cafe"')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const editForm = screen.getByDisplayValue("Cafe").closest("form");
+    expect(editForm).not.toBeNull();
+    fireEvent.change(within(editForm as HTMLFormElement).getByLabelText("Match type"), { target: { value: "regex" } });
+    fireEvent.change(within(editForm as HTMLFormElement).getByLabelText("Match pattern"), { target: { value: "Coffee|Cafe" } });
+    fireEvent.change(within(editForm as HTMLFormElement).getByLabelText("Label"), { target: { value: "1" } });
+    fireEvent.click(within(editForm as HTMLFormElement).getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Rule updated. Applied to 4 existing transactions.")).toBeInTheDocument();
+    expect(mockedUpdateLabelRule).toHaveBeenCalledWith(3, { label_id: 1, match_field: "description", match_type: "regex", pattern: "Coffee|Cafe" });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(await screen.findByText("Rule deleted. Existing transaction labels were not changed.")).toBeInTheDocument();
+    expect(mockedDeleteLabelRule).toHaveBeenCalledWith(3);
+    expect(screen.queryByText('Global rule - description matches regex "Coffee|Cafe"')).not.toBeInTheDocument();
   });
 
   it("prepares and confirms an import from mapped preview rows", async () => {
