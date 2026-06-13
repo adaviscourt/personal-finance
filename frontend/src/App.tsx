@@ -918,7 +918,8 @@ function Home() {
       if (editingRuleId === rule.id) {
         setEditingRuleId(null);
       }
-      setLabelRuleStatus("Rule deleted. Existing transaction labels were not changed.");
+      setLabelRuleStatus("Rule deleted. Matching labels it applied were removed.");
+      refreshDashboard();
     } catch {
       setLabelRuleError("Could not delete that rule.");
     } finally {

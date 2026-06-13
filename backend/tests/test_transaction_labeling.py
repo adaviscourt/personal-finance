@@ -234,6 +234,7 @@ def test_account_scoped_rules_do_not_apply_to_other_accounts() -> None:
 def test_updates_and_deletes_label_rules() -> None:
     client = TestClient(app)
     account = create_account(f"Editable Rule Account {uuid4()}")
+    uncategorized_id = label_id("uncategorized")
     dining_id = label_id("dining")
     groceries_id = label_id("groceries")
     description = f"Editable Coffee {uuid4()}"
@@ -272,12 +273,16 @@ def test_updates_and_deletes_label_rules() -> None:
     with Session(engine) as session:
         transaction = session.exec(select(Transaction).where(Transaction.description == description)).one()
     assert transaction.label_id == groceries_id
+    assert transaction.label_rule_id == rule_id
 
     delete_response = client.delete(f"/transaction-label-rules/{rule_id}")
 
     assert delete_response.status_code == 204
     with Session(engine) as session:
         assert session.get(TransactionLabelRule, rule_id) is None
+        transaction = session.exec(select(Transaction).where(Transaction.description == description)).one()
+    assert transaction.label_id == uncategorized_id
+    assert transaction.label_rule_id is None
 
 
 def test_new_rule_applies_to_matching_existing_transactions() -> None:

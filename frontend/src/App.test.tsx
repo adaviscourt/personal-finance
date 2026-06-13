@@ -775,7 +775,7 @@ describe("App", () => {
     expect(mockedUpdateLabelRule).toHaveBeenCalledWith(3, { label_id: 1, match_field: "description", match_type: "regex", pattern: "Coffee|Cafe" });
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
-    expect(await screen.findByText("Rule deleted. Existing transaction labels were not changed.")).toBeInTheDocument();
+    expect(await screen.findByText("Rule deleted. Matching labels it applied were removed.")).toBeInTheDocument();
     expect(mockedDeleteLabelRule).toHaveBeenCalledWith(3);
     expect(screen.queryByText('Global rule - description matches regex "Coffee|Cafe"')).not.toBeInTheDocument();
   });
