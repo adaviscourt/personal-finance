@@ -87,6 +87,75 @@ def test_transformed_preview_applies_split_amount() -> None:
     ]
 
 
+def test_transformed_preview_composes_description_parts() -> None:
+    config = base_template_config(
+        {
+            "source_column": "Amount",
+            "transform": "signed_amount_direction",
+            "positive_direction": "credit",
+            "negative_direction": "debit",
+        }
+    )
+    config["mappings"]["description"] = {
+        "transform": "compose_description",
+        "description_parts": ["Description", "Check No"],
+    }
+
+    response = post_transformed_preview(
+        "Date,Description,Check No,Amount\n2026-01-01,Coffee,1001,-4.50\n2026-01-02,Refund,,7.25\n",
+        config,
+    )
+
+    assert response.status_code == 200
+    assert [row["description"] for row in response.json()["rows"]] == ["Coffee 1001", "Refund"]
+
+
+def test_transformed_preview_composes_description_parts_in_saved_order() -> None:
+    config = base_template_config(
+        {
+            "source_column": "Amount",
+            "transform": "signed_amount_direction",
+            "positive_direction": "credit",
+            "negative_direction": "debit",
+        }
+    )
+    config["mappings"]["description"] = {
+        "transform": "compose_description",
+        "description_parts": ["Check No", "Description"],
+    }
+
+    response = post_transformed_preview(
+        "Date,Description,Check No,Amount\n2026-01-01,Coffee,1001,-4.50\n",
+        config,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["rows"][0]["description"] == "1001 Coffee"
+
+
+def test_split_amount_rejects_ambiguous_rows() -> None:
+    config = base_template_config(
+        {
+            "transform": "split_amount_direction",
+            "debit_column": "Debit",
+            "credit_column": "Credit",
+        }
+    )
+    config["mappings"]["amount"] = {
+        "transform": "split_amount",
+        "debit_column": "Debit",
+        "credit_column": "Credit",
+    }
+
+    both_empty = post_transformed_preview("Date,Description,Debit,Credit\n2026-01-01,Coffee,,\n", config)
+    both_populated = post_transformed_preview("Date,Description,Debit,Credit\n2026-01-01,Coffee,4.50,1.00\n", config)
+
+    assert both_empty.status_code == 400
+    assert both_empty.json() == {"detail": "Split debit/credit columns must have exactly one amount."}
+    assert both_populated.status_code == 400
+    assert both_populated.json() == {"detail": "Split debit/credit columns must have exactly one amount."}
+
+
 def test_transformed_preview_applies_value_lookup_direction() -> None:
     response = post_transformed_preview(
         "Date,Description,Amount,Type\n2026-01-01,Coffee,4.50,Sale\n2026-01-02,Refund,7.25,Return\n",

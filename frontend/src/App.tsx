@@ -54,6 +54,7 @@ type RequiredMappingField = (typeof REQUIRED_FIELDS)[number];
 type OptionalSplitField = (typeof OPTIONAL_SPLIT_FIELDS)[number];
 type MappingDraft = Record<RequiredMappingField | OptionalSplitField, string>;
 type TransformDraft = Record<(typeof REQUIRED_FIELDS)[number], TemplateTransform>;
+type AmountMode = "single" | "split";
 type DashboardSortKey = "date" | "account" | "description" | "label" | "direction" | "amount";
 type SortDirection = "asc" | "desc";
 type DashboardNetPoint = { month: string; amount: number };
@@ -73,6 +74,10 @@ function createEmptyMappings(): MappingDraft {
 
 function createDefaultTransforms(): TransformDraft {
   return { ...DEFAULT_TRANSFORMS };
+}
+
+function createDefaultDescriptionParts(): string[] {
+  return [""];
 }
 
 function currentMonth(): string {
@@ -196,6 +201,8 @@ function Home() {
   const [templateName, setTemplateName] = useState("");
   const [mappingDraft, setMappingDraft] = useState<MappingDraft>(createEmptyMappings);
   const [transformDraft, setTransformDraft] = useState<TransformDraft>(createDefaultTransforms);
+  const [amountMode, setAmountMode] = useState<AmountMode>("single");
+  const [descriptionParts, setDescriptionParts] = useState<string[]>(createDefaultDescriptionParts);
   const [templateStatus, setTemplateStatus] = useState<string | null>(null);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateSaving, setTemplateSaving] = useState(false);
@@ -257,10 +264,12 @@ function Home() {
     }
 
     setSelectedTemplateId("new");
-    setTemplateName("");
-    setMappingDraft(createEmptyMappings());
-    setTransformDraft(createDefaultTransforms());
-    setPreparedImport(null);
+      setTemplateName("");
+      setMappingDraft(createEmptyMappings());
+      setTransformDraft(createDefaultTransforms());
+      setAmountMode("single");
+      setDescriptionParts(createDefaultDescriptionParts());
+      setPreparedImport(null);
     setImportResult(null);
     const requestId = templateRequestId.current + 1;
     templateRequestId.current = requestId;
@@ -477,16 +486,14 @@ function Home() {
   const showMappingStep = hasPreview && selectedTemplateId === "new";
   const showImportReview = Boolean(preparedImport);
   const selectedTemplate = selectedTemplateId === "new" ? null : templates.find((template) => template.id === selectedTemplateId) ?? null;
-  const hasSplitColumns = Boolean(mappingDraft.debit && mappingDraft.credit);
-  const missingMappingFields = REQUIRED_FIELDS.filter((field) => {
-    if (field === "amount" && transformDraft.amount === "split_amount" && hasSplitColumns) {
-      return false;
-    }
-    if (field === "direction" && transformDraft.direction === "split_amount_direction" && hasSplitColumns) {
-      return false;
-    }
-    return !mappingDraft[field];
-  });
+  const selectedDescriptionParts = descriptionParts.filter((part) => part.trim());
+  const missingMappingFields = [
+    mappingDraft.date ? null : "date",
+    selectedDescriptionParts.length > 0 ? null : "description",
+    amountMode === "single" && !mappingDraft.amount ? "amount" : null,
+    amountMode === "split" && !mappingDraft.debit ? "debit" : null,
+    amountMode === "split" && !mappingDraft.credit ? "credit" : null,
+  ].filter((field): field is string => Boolean(field));
   const importValidationItems = [
     selectedFile ? null : "Choose a source CSV file.",
     activeAccountId === "" ? "Choose the account receiving this import." : null,
@@ -557,6 +564,41 @@ function Home() {
       key,
       direction: currentSort.key === key && currentSort.direction === "asc" ? "desc" : "asc",
     }));
+  }
+
+  function updateDescriptionPart(index: number, value: string) {
+    setDescriptionParts((currentParts) => currentParts.map((part, currentIndex) => (currentIndex === index ? value : part)));
+    setPreparedImport(null);
+    setImportResult(null);
+    setImportStatus(null);
+  }
+
+  function moveDescriptionPart(index: number, direction: -1 | 1) {
+    setDescriptionParts((currentParts) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= currentParts.length) {
+        return currentParts;
+      }
+      const nextParts = [...currentParts];
+      [nextParts[index], nextParts[nextIndex]] = [nextParts[nextIndex], nextParts[index]];
+      return nextParts;
+    });
+    setPreparedImport(null);
+    setImportResult(null);
+    setImportStatus(null);
+  }
+
+  function removeDescriptionPart(index: number) {
+    setDescriptionParts((currentParts) => currentParts.length === 1 ? [""] : currentParts.filter((_part, currentIndex) => currentIndex !== index));
+    setPreparedImport(null);
+    setImportResult(null);
+    setImportStatus(null);
+  }
+
+  function resetPreparedImportState() {
+    setPreparedImport(null);
+    setImportResult(null);
+    setImportStatus(null);
   }
 
   function renderDashboardSortHeader(key: DashboardSortKey) {
@@ -658,10 +700,16 @@ function Home() {
     );
     nextMappings.debit = splitMapping?.debit_column ?? "";
     nextMappings.credit = splitMapping?.credit_column ?? "";
+    const descriptionMapping = template.config.mappings.description;
+    const nextDescriptionParts = descriptionMapping?.description_parts?.length
+      ? descriptionMapping.description_parts
+      : [descriptionMapping?.source_column ?? ""];
 
     setTemplateName(template.name);
     setMappingDraft(nextMappings);
     setTransformDraft(nextTransforms);
+    setAmountMode(splitMapping ? "split" : "single");
+    setDescriptionParts(nextDescriptionParts.length > 0 ? nextDescriptionParts : createDefaultDescriptionParts());
   }
 
   function buildTemplateConfig(): ImportTemplateConfig {
@@ -669,20 +717,24 @@ function Home() {
       debit_column: mappingDraft.debit,
       credit_column: mappingDraft.credit,
     };
+    const descriptionColumns = descriptionParts.map((part) => part.trim()).filter(Boolean);
+    const descriptionMapping = descriptionColumns.length > 1
+      ? { transform: "compose_description" as TemplateTransform, description_parts: descriptionColumns }
+      : { source_column: descriptionColumns[0] ?? "", transform: "copy_column" as TemplateTransform };
 
     return {
       mappings: {
         date: { source_column: mappingDraft.date, transform: transformDraft.date },
-        description: { source_column: mappingDraft.description, transform: transformDraft.description },
+        description: descriptionMapping,
         amount:
-          transformDraft.amount === "split_amount"
-            ? { transform: transformDraft.amount, ...splitColumns }
+          amountMode === "split"
+            ? { transform: "split_amount" as TemplateTransform, ...splitColumns }
             : { source_column: mappingDraft.amount, transform: transformDraft.amount },
         direction:
-          transformDraft.direction === "split_amount_direction"
-            ? { transform: transformDraft.direction, ...splitColumns }
+          amountMode === "split"
+            ? { transform: "split_amount_direction" as TemplateTransform, ...splitColumns }
             : {
-                source_column: mappingDraft.direction,
+                source_column: mappingDraft.amount,
                 transform: transformDraft.direction,
                 positive_direction: "credit",
                 negative_direction: "debit",
@@ -1308,6 +1360,8 @@ function Home() {
                         setTemplateName("");
                         setMappingDraft(createEmptyMappings());
                         setTransformDraft(createDefaultTransforms());
+                        setAmountMode("single");
+                        setDescriptionParts(createDefaultDescriptionParts());
                         return;
                       }
                       const template = templates.find((candidate) => candidate.id === value);
@@ -1342,80 +1396,141 @@ function Home() {
                   />
                 </label>
                 <div className="mapping-grid">
-                {REQUIRED_FIELDS.map((field) => (
-                  <div className="mapping-row" key={field}>
-                    <strong>{field}</strong>
+                  <div className="mapping-row mapping-row-compact">
+                    <strong>Date</strong>
                     <label>
                       <span>Source column</span>
                       <select
-                        value={mappingDraft[field]}
+                        aria-label="Date source column"
+                        value={mappingDraft.date}
                         onChange={(event) => {
-                          setMappingDraft((current) => ({ ...current, [field]: event.target.value }));
-                          setPreparedImport(null);
-                          setImportResult(null);
-                          setImportStatus(null);
+                          setMappingDraft((current) => ({ ...current, date: event.target.value }));
+                          resetPreparedImportState();
                         }}
                       >
-                        <option value="">Choose column</option>
+                        <option value="">Choose date column</option>
                         {preview.source_columns.map((column) => (
-                          <option key={column} value={column}>
-                            {column}
-                          </option>
+                          <option key={column} value={column}>{column}</option>
                         ))}
                       </select>
                     </label>
-                    <label>
-                      <span>Transform</span>
-                      <select
-                        value={transformDraft[field]}
-                        onChange={(event) => {
-                          setTransformDraft((current) => ({
-                            ...current,
-                            [field]: event.target.value as TemplateTransform,
-                          }));
-                          setPreparedImport(null);
-                          setImportResult(null);
-                          setImportStatus(null);
-                        }}
-                      >
-                        <option value="copy_column">copy column</option>
-                        <option value="parse_date">parse date</option>
-                        <option value="parse_numeric">parse numeric</option>
-                        <option value="absolute_numeric">absolute numeric</option>
-                        <option value="split_amount">split amount</option>
-                        <option value="signed_amount_direction">signed amount direction</option>
-                        <option value="split_amount_direction">split amount direction</option>
-                      </select>
-                    </label>
+                    <span className="template-note">Parsed as transaction date.</span>
                   </div>
-                ))}
-                {OPTIONAL_SPLIT_FIELDS.map((field) => (
-                  <div className="mapping-row" key={field}>
-                    <strong>{field}</strong>
-                    <label>
-                      <span>Source column</span>
-                      <select
-                        value={mappingDraft[field]}
-                        onChange={(event) => {
-                          setMappingDraft((current) => ({ ...current, [field]: event.target.value }));
-                          setPreparedImport(null);
-                          setImportResult(null);
-                          setImportStatus(null);
-                        }}
-                      >
-                        <option value="">Optional column</option>
-                        {preview.source_columns.map((column) => (
-                          <option key={column} value={column}>
-                            {column}
-                          </option>
+
+                  <div className="mapping-card">
+                    <div>
+                      <strong>Description</strong>
+                      <p>Choose one or more columns. Import joins non-empty values with one space.</p>
+                    </div>
+                    <div className="description-parts">
+                      {descriptionParts.map((part, index) => (
+                        <div className="description-part" key={index}>
+                          <span>{index + 1}</span>
+                          <label>
+                            <span>Description source column {index + 1}</span>
+                            <select
+                              aria-label={`Description source column ${index + 1}`}
+                              value={part}
+                              onChange={(event) => updateDescriptionPart(index, event.target.value)}
+                            >
+                              <option value="">Choose column</option>
+                              {preview.source_columns.map((column) => (
+                                <option key={column} value={column}>{column}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="description-part-actions" aria-label={`Reorder description source column ${index + 1}`}>
+                            <button type="button" disabled={index === 0} onClick={() => moveDescriptionPart(index, -1)}>Move up</button>
+                            <button type="button" disabled={index === descriptionParts.length - 1} onClick={() => moveDescriptionPart(index, 1)}>Move down</button>
+                            <button type="button" onClick={() => removeDescriptionPart(index)}>Remove</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      onClick={() => {
+                        setDescriptionParts((currentParts) => [...currentParts, ""]);
+                        resetPreparedImportState();
+                      }}
+                    >
+                      Add description field
+                    </button>
+                  </div>
+
+                  <div className="mapping-card">
+                    <div>
+                      <strong>Amount layout</strong>
+                      <p>Pick the statement format. Split mode derives both amount and debit/credit direction.</p>
+                    </div>
+                    <div className="amount-mode-group" role="radiogroup" aria-label="Amount layout">
+                      <label>
+                        <input
+                          type="radio"
+                          name="amount-mode"
+                          checked={amountMode === "single"}
+                          onChange={() => {
+                            setAmountMode("single");
+                            resetPreparedImportState();
+                          }}
+                        />
+                        <span>Single amount column</span>
+                      </label>
+                      <label>
+                        <input
+                          type="radio"
+                          name="amount-mode"
+                          checked={amountMode === "split"}
+                          onChange={() => {
+                            setAmountMode("split");
+                            resetPreparedImportState();
+                          }}
+                        />
+                        <span>Separate debit and credit columns</span>
+                      </label>
+                    </div>
+                    {amountMode === "single" ? (
+                      <label className="mapping-inline-control">
+                        <span>Amount source column</span>
+                        <select
+                          aria-label="Amount source column"
+                          value={mappingDraft.amount}
+                          onChange={(event) => {
+                            setMappingDraft((current) => ({ ...current, amount: event.target.value, direction: event.target.value }));
+                            resetPreparedImportState();
+                          }}
+                        >
+                          <option value="">Choose amount column</option>
+                          {preview.source_columns.map((column) => (
+                            <option key={column} value={column}>{column}</option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : (
+                      <div className="split-column-grid">
+                        {OPTIONAL_SPLIT_FIELDS.map((field) => (
+                          <label key={field}>
+                            <span>{field === "debit" ? "Debit amount column" : "Credit amount column"}</span>
+                            <select
+                              aria-label={field === "debit" ? "Debit amount column" : "Credit amount column"}
+                              value={mappingDraft[field]}
+                              onChange={(event) => {
+                                setMappingDraft((current) => ({ ...current, [field]: event.target.value }));
+                                resetPreparedImportState();
+                              }}
+                            >
+                              <option value="">Choose {field} column</option>
+                              {preview.source_columns.map((column) => (
+                                <option key={column} value={column}>{column}</option>
+                              ))}
+                            </select>
+                          </label>
                         ))}
-                      </select>
-                    </label>
-                    <span className="template-note">Used by split amount and split amount direction.</span>
+                      </div>
+                    )}
                   </div>
-                ))}
                 </div>
-                <p className="template-note">For split debit/credit files, set debit and credit optional columns, amount transform to split amount, and direction transform to split amount direction. Amount source may stay empty.</p>
               </div>
               ) : null}
               {templateError ? <p className="preview-error">{templateError}</p> : null}

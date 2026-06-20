@@ -20,6 +20,7 @@ export type TemplateTransform =
   | "parse_date"
   | "parse_numeric"
   | "absolute_numeric"
+  | "compose_description"
   | "split_amount"
   | "signed_amount_direction"
   | "split_amount_direction"
@@ -33,6 +34,7 @@ export type TemplateFieldMapping = {
   negative_direction?: "debit" | "credit" | null;
   debit_column?: string | null;
   credit_column?: string | null;
+  description_parts?: string[] | null;
 };
 
 export type ImportTemplateConfig = {

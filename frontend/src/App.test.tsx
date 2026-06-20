@@ -451,10 +451,9 @@ describe("App", () => {
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Checking export" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[3], { target: { value: "Amount" } });
+    fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
+    fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
+    fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
     fireEvent.click(screen.getByRole("button", { name: "Save Template" }));
 
     expect(await screen.findByText("Template saved for future imports.")).toBeInTheDocument();
@@ -506,10 +505,9 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Checking export" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[3], { target: { value: "Amount" } });
+    fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
+    fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
+    fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
     fireEvent.click(screen.getByRole("button", { name: "Save Template" }));
 
     expect(await screen.findByText("Template saved for future imports.")).toBeInTheDocument();
@@ -518,6 +516,106 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("option", { name: "Checking export" })).toBeInTheDocument();
+    });
+  });
+
+  it("saves split debit and credit mappings from amount layout controls", async () => {
+    mockedPreviewCsv.mockResolvedValue({
+      headers: ["Date", "Description", "Debit", "Credit"],
+      source_columns: ["Date", "Description", "Debit", "Credit"],
+      rows: [{ Date: "2026-01-01", Description: "Coffee", Debit: "4.50", Credit: "" }],
+    });
+    mockedCreateImportTemplate.mockResolvedValue({
+      id: 11,
+      name: "Split checking",
+      account_id: 1,
+      created_at: "2026-01-01T00:00:00+00:00",
+      updated_at: "2026-01-01T00:00:00+00:00",
+      config: {
+        mappings: {
+          date: { source_column: "Date", transform: "parse_date" },
+          description: { source_column: "Description", transform: "copy_column" },
+          amount: { transform: "split_amount", debit_column: "Debit", credit_column: "Credit" },
+          direction: { transform: "split_amount_direction", debit_column: "Debit", credit_column: "Credit" },
+        },
+      },
+    });
+
+    renderApp("/import");
+
+    fireEvent.change(await screen.findByLabelText("Statement CSV"), {
+      target: { files: [new File(["Date,Description,Debit,Credit\n2026-01-01,Coffee,4.50,\n"], "statement.csv")] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Split checking" } });
+    fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
+    fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
+    fireEvent.click(screen.getByLabelText("Separate debit and credit columns"));
+    fireEvent.change(screen.getByLabelText("Debit amount column"), { target: { value: "Debit" } });
+    fireEvent.change(screen.getByLabelText("Credit amount column"), { target: { value: "Credit" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Template" }));
+
+    await waitFor(() => {
+      expect(mockedCreateImportTemplate).toHaveBeenCalledWith(expect.objectContaining({
+        config: {
+          mappings: {
+            date: { source_column: "Date", transform: "parse_date" },
+            description: { source_column: "Description", transform: "copy_column" },
+            amount: { transform: "split_amount", debit_column: "Debit", credit_column: "Credit" },
+            direction: { transform: "split_amount_direction", debit_column: "Debit", credit_column: "Credit" },
+          },
+        },
+      }));
+    });
+  });
+
+  it("saves reordered description source columns", async () => {
+    mockedPreviewCsv.mockResolvedValue({
+      headers: ["Date", "Description", "Check No", "Amount"],
+      source_columns: ["Date", "Description", "Check No", "Amount"],
+      rows: [{ Date: "2026-01-01", Description: "Coffee", "Check No": "1001", Amount: "-4.50" }],
+    });
+    mockedCreateImportTemplate.mockResolvedValue({
+      id: 12,
+      name: "Composed description",
+      account_id: 1,
+      created_at: "2026-01-01T00:00:00+00:00",
+      updated_at: "2026-01-01T00:00:00+00:00",
+      config: {
+        mappings: {
+          date: { source_column: "Date", transform: "parse_date" },
+          description: { transform: "compose_description", description_parts: ["Check No", "Description"] },
+          amount: { source_column: "Amount", transform: "absolute_numeric" },
+          direction: { source_column: "Amount", transform: "signed_amount_direction" },
+        },
+      },
+    });
+
+    renderApp("/import");
+
+    fireEvent.change(await screen.findByLabelText("Statement CSV"), {
+      target: { files: [new File(["Date,Description,Check No,Amount\n2026-01-01,Coffee,1001,-4.50\n"], "statement.csv")] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Composed description" } });
+    fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
+    fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add description field" }));
+    fireEvent.change(screen.getByLabelText("Description source column 2"), { target: { value: "Check No" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Move up" })[1]);
+    fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Template" }));
+
+    await waitFor(() => {
+      expect(mockedCreateImportTemplate).toHaveBeenCalledWith(expect.objectContaining({
+        config: expect.objectContaining({
+          mappings: expect.objectContaining({
+            description: { transform: "compose_description", description_parts: ["Check No", "Description"] },
+          }),
+        }),
+      }));
     });
   });
 
@@ -804,10 +902,9 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[3], { target: { value: "Amount" } });
+    fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
+    fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
+    fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
     fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
 
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
@@ -844,10 +941,9 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[3], { target: { value: "Amount" } });
+    fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
+    fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
+    fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
     fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
@@ -888,10 +984,9 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getAllByLabelText("Source column")[0], { target: { value: "Date" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[1], { target: { value: "Description" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[2], { target: { value: "Amount" } });
-    fireEvent.change(screen.getAllByLabelText("Source column")[3], { target: { value: "Amount" } });
+    fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
+    fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
+    fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
     fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));

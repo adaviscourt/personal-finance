@@ -103,6 +103,35 @@ def test_template_validation_rejects_unknown_transform() -> None:
     assert response.status_code == 422
 
 
+def test_template_validation_stores_composed_description_parts() -> None:
+    client = TestClient(app)
+    cleanup_template_names("Composed Description")
+    payload = valid_template_payload("Composed Description")
+    payload["config"]["mappings"]["description"] = {
+        "transform": "compose_description",
+        "description_parts": ["Description", "Check No"],
+    }
+
+    response = client.post("/import-templates", json=payload)
+
+    assert response.status_code == 201
+    assert response.json()["config"]["mappings"]["description"]["description_parts"] == ["Description", "Check No"]
+
+
+def test_template_validation_rejects_missing_description_parts() -> None:
+    client = TestClient(app)
+    payload = valid_template_payload("Missing Description Parts")
+    payload["config"]["mappings"]["description"] = {
+        "transform": "compose_description",
+        "description_parts": [],
+    }
+
+    response = client.post("/import-templates", json=payload)
+
+    assert response.status_code == 422
+    assert "compose_description requires description_parts" in str(response.json())
+
+
 def test_template_validation_rejects_missing_account() -> None:
     client = TestClient(app)
     payload = valid_template_payload("Missing Account")
