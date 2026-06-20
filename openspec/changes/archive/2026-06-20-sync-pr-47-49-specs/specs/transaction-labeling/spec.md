@@ -1,58 +1,4 @@
-## Purpose
-
-Defines dedicated transaction labeling workflow, MVP taxonomy, and reusable label matching rules.
-
-## Requirements
-
-### Requirement: Provide dedicated labeling module
-The system SHALL provide a dedicated labeling module for transaction label rule management.
-
-#### Scenario: User opens labeling module
-- **WHEN** the user opens the labeling module
-- **THEN** label rule creation and existing label rule review are available there instead of on the dashboard home page
-
-### Requirement: Provide fixed label taxonomy
-The system SHALL seed a fixed set of system labels for the MVP and SHALL allow additional custom labels.
-
-#### Scenario: Default labels available
-- **WHEN** the user labels transactions
-- **THEN** the system offers the predefined system labels with controllability metadata
-
-#### Scenario: Custom labels available
-- **WHEN** the user creates custom labels
-- **THEN** the system offers those labels alongside system labels in rule and dashboard controls
-
-### Requirement: Label matching transactions manually
-The system SHALL allow a user to assign a predefined label to transactions matched by merchant or description text.
-
-#### Scenario: Description pattern labeled
-- **WHEN** the user creates a description match rule and selects a predefined label
-- **THEN** the system applies that label to matching transactions
-
-### Requirement: Save reusable label rules
-The system SHALL save merchant or description label rules for future transaction matching.
-
-#### Scenario: Rule applies to future imports
-- **WHEN** new transactions are imported after a label rule has been saved
-- **THEN** matching imported transactions receive the rule's predefined label
-
-### Requirement: Keep unmatched transactions uncategorized
-The system SHALL treat transactions without a matching label rule or manual label as uncategorized.
-
-#### Scenario: No matching label
-- **WHEN** a transaction has no assigned label and matches no label rule
-- **THEN** the transaction appears as uncategorized in label-based views
-
-### Requirement: Keep labels available to dashboard filters
-The system SHALL make the fixed label taxonomy available for dashboard label filtering.
-
-#### Scenario: User views dashboard label filter
-- **WHEN** the dashboard loads labels successfully
-- **THEN** the dashboard offers the fixed labels and an all-labels default for filtering transactions
-
-#### Scenario: User filters by label after rule changes
-- **WHEN** the user creates a label rule and returns to the dashboard
-- **THEN** matching transactions can be reviewed through the dashboard label filter
+## ADDED Requirements
 
 ### Requirement: Create custom labels
 The system SHALL allow users to create custom labels with a name, optional account scope, and controllable or non-controllable classification.
@@ -122,3 +68,22 @@ The system SHALL display labels grouped or styled by account scope and controlla
 #### Scenario: Labels displayed
 - **WHEN** the labeling interface lists labels
 - **THEN** the user can distinguish global labels, account-scoped labels, controllable labels, and non-controllable labels
+
+## MODIFIED Requirements
+
+### Requirement: Provide fixed label taxonomy
+The system SHALL seed a fixed set of system labels for the MVP and SHALL allow additional custom labels.
+
+#### Scenario: Default labels available
+- **WHEN** the user labels transactions
+- **THEN** the system offers the predefined system labels with controllability metadata
+
+#### Scenario: Custom labels available
+- **WHEN** the user creates custom labels
+- **THEN** the system offers those labels alongside system labels in rule and dashboard controls
+
+## REMOVED Requirements
+
+### Requirement: Prevent custom labels
+**Reason**: Custom labels with account scope and controllability are now required for shipped labeling workflows.
+**Migration**: Use `Create custom labels` and `Scope labels and rules by account` requirements instead.
