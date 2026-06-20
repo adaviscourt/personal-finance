@@ -59,6 +59,7 @@ class TemplateFieldMapping(BaseModel):
         "parse_date",
         "parse_numeric",
         "absolute_numeric",
+        "compose_description",
         "split_amount",
         "signed_amount_direction",
         "split_amount_direction",
@@ -69,6 +70,7 @@ class TemplateFieldMapping(BaseModel):
     negative_direction: Literal["debit", "credit"] | None = None
     debit_column: str | None = None
     credit_column: str | None = None
+    description_parts: list[str] | None = None
 
     @field_validator("source_column", "debit_column", "credit_column")
     @classmethod
@@ -77,11 +79,26 @@ class TemplateFieldMapping(BaseModel):
             raise ValueError("Column names must not be blank.")
         return value
 
+    @field_validator("description_parts")
+    @classmethod
+    def non_blank_description_parts(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return value
+        cleaned_parts = [part.strip() for part in value]
+        if not cleaned_parts or any(not part for part in cleaned_parts):
+            raise ValueError("compose_description requires description_parts.")
+        return cleaned_parts
+
     @model_validator(mode="after")
     def validate_transform_config(self):
         if self.transform in {"split_amount", "split_amount_direction"}:
             if not self.debit_column or not self.credit_column:
                 raise ValueError(f"{self.transform} requires debit_column and credit_column.")
+            return self
+
+        if self.transform == "compose_description":
+            if not self.description_parts:
+                raise ValueError("compose_description requires description_parts.")
             return self
 
         if not self.source_column:
@@ -501,6 +518,29 @@ def is_present_amount(value: Any) -> bool:
     return parsed_value is not None and parsed_value != 0
 
 
+def split_debit_credit_value(row: dict[str, Any], mapping: TemplateFieldMapping) -> tuple[Literal["debit", "credit"], Decimal]:
+    debit_value = parse_decimal_value(source_value(row, mapping.debit_column))
+    credit_value = parse_decimal_value(source_value(row, mapping.credit_column))
+    debit_present = debit_value is not None
+    credit_present = credit_value is not None
+    if debit_present == credit_present:
+        raise HTTPException(status_code=400, detail="Split debit/credit columns must have exactly one amount.")
+    if debit_present:
+        assert debit_value is not None
+        return "debit", debit_value
+    assert credit_value is not None
+    return "credit", credit_value
+
+
+def compose_description_value(row: dict[str, Any], description_parts: list[str]) -> str | None:
+    values = []
+    for column in description_parts:
+        value = source_value(row, column)
+        if value is not None and str(value).strip():
+            values.append(str(value).strip())
+    return " ".join(values) if values else None
+
+
 def apply_transform(row: dict[str, Any], mapping: TemplateFieldMapping) -> Any:
     if mapping.transform == "copy_column":
         return source_value(row, mapping.source_column)
@@ -511,25 +551,19 @@ def apply_transform(row: dict[str, Any], mapping: TemplateFieldMapping) -> Any:
     if mapping.transform == "absolute_numeric":
         parsed_value = parse_decimal_value(source_value(row, mapping.source_column))
         return serialize_decimal(abs(parsed_value)) if parsed_value is not None else None
+    if mapping.transform == "compose_description":
+        return compose_description_value(row, mapping.description_parts or [])
     if mapping.transform == "split_amount":
-        credit_value = parse_decimal_value(source_value(row, mapping.credit_column))
-        if credit_value is not None:
-            return serialize_decimal(abs(credit_value))
-        debit_value = parse_decimal_value(source_value(row, mapping.debit_column))
-        if debit_value is not None:
-            return serialize_decimal(abs(debit_value))
-        return None
+        _direction, amount = split_debit_credit_value(row, mapping)
+        return serialize_decimal(abs(amount))
     if mapping.transform == "signed_amount_direction":
         parsed_value = parse_decimal_value(source_value(row, mapping.source_column))
         if parsed_value is None or parsed_value == 0:
             return None
         return mapping.positive_direction if parsed_value > 0 else mapping.negative_direction
     if mapping.transform == "split_amount_direction":
-        if parse_decimal_value(source_value(row, mapping.credit_column)) is not None:
-            return "credit"
-        if parse_decimal_value(source_value(row, mapping.debit_column)) is not None:
-            return "debit"
-        return None
+        direction, _amount = split_debit_credit_value(row, mapping)
+        return direction
     if mapping.transform == "value_lookup":
         lookup_value = source_value(row, mapping.source_column)
         lookup_key = "" if lookup_value is None else str(lookup_value)

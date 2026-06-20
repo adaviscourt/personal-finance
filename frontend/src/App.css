@@ -1050,6 +1050,115 @@ button,
   background: var(--surface);
 }
 
+.mapping-row-compact {
+  grid-template-columns: 120px minmax(220px, 0.55fr) minmax(180px, 1fr);
+}
+
+.mapping-card {
+  display: grid;
+  gap: 13px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.mapping-card > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.mapping-card strong {
+  color: var(--brand);
+}
+
+.description-parts {
+  display: grid;
+  gap: 10px;
+}
+
+.description-part {
+  display: grid;
+  grid-template-columns: 32px minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.description-part > span {
+  display: inline-flex;
+  width: 30px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-panel);
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.description-part-actions,
+.amount-mode-group,
+.split-column-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.description-part-actions button,
+.secondary-action {
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel);
+  color: var(--blue-dark);
+  font-weight: 850;
+}
+
+.description-part-actions button:hover,
+.secondary-action:hover {
+  border-color: color-mix(in oklch, var(--brand) 32%, var(--border));
+  background: var(--brand-soft);
+}
+
+.description-part-actions button:disabled {
+  cursor: not-allowed;
+  border-color: var(--border);
+  background: var(--surface-panel);
+  color: var(--muted);
+}
+
+.secondary-action {
+  justify-self: start;
+}
+
+.amount-mode-group label {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.amount-mode-group input {
+  width: auto;
+}
+
+.mapping-inline-control {
+  max-width: 420px;
+}
+
+.split-column-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
 .mapping-row strong {
   color: var(--brand);
   text-transform: capitalize;
@@ -1459,7 +1568,8 @@ tbody tr:hover {
   .dashboard-kpis,
   .dashboard-grid,
   .workflow-steps,
-  .label-rule-form {
+  .label-rule-form,
+  .split-column-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1528,8 +1638,19 @@ tbody tr:hover {
   }
 
   .mapping-row,
+  .description-part,
   .account-list article {
     grid-template-columns: 1fr;
+  }
+
+  .description-part > span {
+    width: fit-content;
+    min-width: 30px;
+  }
+
+  .description-part-actions button,
+  .secondary-action {
+    flex: 1 1 120px;
   }
 
   .dashboard-header label {
