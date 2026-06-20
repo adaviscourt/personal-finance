@@ -12,7 +12,7 @@ The system SHALL provide a dedicated import module for CSV upload, template sele
 - **THEN** CSV upload, import template, transformed preview, duplicate warning, and confirmation controls are available there instead of on the dashboard home page
 
 ### Requirement: Guide import workflow steps
-The system SHALL present import actions in a progressive guided order from account selection to confirmed import.
+The system SHALL present import actions in a progressive guided order from account selection to confirmed import, including prescriptive template mapping controls for common CSV layouts.
 
 #### Scenario: User starts an import
 - **WHEN** the user starts an import workflow
@@ -29,6 +29,14 @@ The system SHALL present import actions in a progressive guided order from accou
 #### Scenario: Required import inputs missing
 - **WHEN** the user attempts to prepare or confirm an import without required inputs
 - **THEN** the import module shows contextual validation for the missing file, account, or mapping information
+
+#### Scenario: Split debit and credit mapping configured
+- **WHEN** the user indicates that amount values are split across separate debit and credit CSV columns
+- **THEN** the import mapping interface asks for debit and credit source columns in one dedicated split amount section instead of requiring separate amount and direction transform coordination
+
+#### Scenario: Description composition configured
+- **WHEN** the user configures Description from multiple source fields
+- **THEN** the import mapping interface allows the fields to be ordered before the transformed preview is prepared
 
 ### Requirement: Confirm normalized transaction import
 The system SHALL import normalized transactions only after the user confirms the transformed preview.
