@@ -3,16 +3,25 @@ import { createServer } from "node:http";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { chromium } from "playwright";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, "..");
 const repoRoot = join(projectRoot, "..");
-const outDir = join(projectRoot, ".pr-screenshots", new Date().toISOString().replace(/[:.]/g, "-"));
 const port = Number(process.env.PR_SCREENSHOT_PORT ?? 4177);
 const apiPort = Number(process.env.PR_SCREENSHOT_API_PORT ?? 4178);
 const appUrl = `http://127.0.0.1:${port}`;
-const publicBaseUrl = process.env.PR_SCREENSHOT_BASE_URL?.replace(/\/+$/, "");
+const branchName = getGitOutput(["branch", "--show-current"]);
+const branchSlug = (branchName || "detached").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-|-$/g, "") || "detached";
+const trackedOutput = branchName && !["main", "master"].includes(branchName);
+const configuredOutputDir = process.env.PR_SCREENSHOT_OUTPUT_DIR;
+const outDir = configuredOutputDir
+  ? join(repoRoot, configuredOutputDir)
+  : trackedOutput
+    ? join(repoRoot, "docs", "pr-screenshots", branchSlug)
+    : join(projectRoot, ".pr-screenshots", new Date().toISOString().replace(/[:.]/g, "-"));
+const publicBaseUrl = process.env.PR_SCREENSHOT_BASE_URL?.replace(/\/+$/, "") ?? getPublicBaseUrl();
 
 const routes = [
   { path: "/", name: "dashboard" },
@@ -118,6 +127,32 @@ function run(command, args) {
   });
 }
 
+function getGitOutput(args) {
+  try {
+    return execFileSync("git", args, { cwd: repoRoot, encoding: "utf8" }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function getGitHubRepo() {
+  const remote = getGitOutput(["config", "--get", "remote.origin.url"]);
+  const match = remote.match(/github\.com[:/]([^/]+\/[^/.]+)(?:\.git)?$/);
+  return match?.[1] ?? "";
+}
+
+function getPublicBaseUrl() {
+  if (!trackedOutput) {
+    return "";
+  }
+  const repo = getGitHubRepo();
+  if (!repo || !branchName) {
+    return "";
+  }
+  const relativeOutDir = relative(repoRoot, outDir).replaceAll("\\", "/");
+  return `https://raw.githubusercontent.com/${repo}/${branchName}/${relativeOutDir}`;
+}
+
 function formatScreenshotPath(filePath) {
   const pathFromOutDir = relative(outDir, filePath).replaceAll("\\", "/");
   if (publicBaseUrl) {
@@ -161,9 +196,20 @@ try {
 
   await browser.close();
   const formattedFiles = files.map(formatScreenshotPath);
-  await writeFile(join(outDir, "README.md"), formattedFiles.map((file) => `- ${file}`).join("\n") + "\n");
+  const markdown = files.map((file, index) => {
+    const route = routes[index % routes.length].name;
+    const viewport = viewports[Math.floor(index / routes.length)].name;
+    return `![${route} ${viewport}](${formattedFiles[index]})`;
+  });
+  await writeFile(join(outDir, "README.md"), markdown.join("\n\n") + "\n");
 
   console.log("PR_SCREENSHOTS ok");
+  console.log(`PR_SCREENSHOTS dir ${relative(repoRoot, outDir).replaceAll("\\", "/")}`);
+  console.log("PR_SCREENSHOTS_MARKDOWN_BEGIN");
+  for (const line of markdown) {
+    console.log(line);
+  }
+  console.log("PR_SCREENSHOTS_MARKDOWN_END");
   for (const file of formattedFiles) {
     console.log(file);
   }
