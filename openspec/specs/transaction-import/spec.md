@@ -12,11 +12,11 @@ The system SHALL provide a dedicated import module for CSV upload, template sele
 - **THEN** CSV upload, import template, transformed preview, duplicate warning, and confirmation controls are available there instead of on the dashboard home page
 
 ### Requirement: Guide import workflow steps
-The system SHALL present import actions in a guided order from account selection to confirmed import.
+The system SHALL present import actions in a progressive guided order from account selection to confirmed import.
 
 #### Scenario: User starts an import
 - **WHEN** the user starts an import workflow
-- **THEN** the interface presents the flow as choosing an account, selecting a CSV, choosing or editing account-scoped template mappings, preparing a transformed preview, reviewing warnings, and confirming import
+- **THEN** the interface presents the flow as choosing an account, selecting a CSV, reviewing CSV preview, choosing or editing account-scoped template mappings, preparing a transformed preview, reviewing warnings, and confirming import
 
 #### Scenario: No accounts exist
 - **WHEN** the user opens the import module before any account exists
@@ -56,11 +56,11 @@ The system SHALL retain source context for imported transactions.
 - **THEN** the transaction references its upload and source raw row
 
 ### Requirement: Persist unified transaction fields
-The system SHALL persist normalized transactions with the MVP unified transaction fields.
+The system SHALL persist normalized transactions with the MVP unified transaction fields derived from template mappings and transforms.
 
 #### Scenario: Transaction fields persisted
 - **WHEN** a transaction row is imported
-- **THEN** the system stores date, description, amount, direction, account, source metadata, optional balance, optional check number, and optional label
+- **THEN** the system stores date, description, amount, direction, account, source metadata, optional balance, optional check number, optional label, and source rule provenance when a rule applied the label
 
 ### Requirement: Detect likely duplicate transactions
 The system SHALL detect likely duplicate transactions during import using normalized transaction attributes.
@@ -86,3 +86,21 @@ The system SHALL provide a clear path from a completed import to dashboard trans
 #### Scenario: Import completes
 - **WHEN** the user confirms an import successfully
 - **THEN** the import module communicates the inserted transaction count and provides a way to review the imported month in the dashboard
+
+### Requirement: Gate confirmation on transformed preview
+The system SHALL expose import confirmation only after a transformed preview has been prepared successfully.
+
+#### Scenario: Preview not prepared
+- **WHEN** the user has not prepared transformed rows
+- **THEN** the import module does not allow import confirmation
+
+#### Scenario: Preview prepared
+- **WHEN** the user prepares transformed rows successfully
+- **THEN** the import module allows review of warnings and import confirmation
+
+### Requirement: Show prepare errors visibly
+The system SHALL show contextual prepare errors when import preparation fails because required inputs, mappings, or transform data are invalid.
+
+#### Scenario: Prepare fails
+- **WHEN** import preparation fails validation
+- **THEN** the import module displays the validation error near the import workflow and does not persist transactions
