@@ -869,6 +869,10 @@ def delete_account(account_id: int, confirmed: bool = False) -> AccountDeleteWar
                 session.delete(raw_row)
         for upload in session.exec(select(StoredUploadFile).where(StoredUploadFile.account_id == account_id)).all():
             session.delete(upload)
+        for rule in session.exec(select(TransactionLabelRule).where(TransactionLabelRule.account_id == account_id)).all():
+            session.delete(rule)
+        for label in session.exec(select(Label).where(Label.account_id == account_id)).all():
+            session.delete(label)
         session.commit()
         session.delete(account)
         session.commit()
