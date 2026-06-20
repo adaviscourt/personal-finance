@@ -5,7 +5,17 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from app.database import Account, ImportTemplate, RawImportRow, Transaction, UploadFile, engine, init_db
+from app.database import (
+    Account,
+    ImportTemplate,
+    Label,
+    RawImportRow,
+    Transaction,
+    TransactionLabelRule,
+    UploadFile,
+    engine,
+    init_db,
+)
 from app.main import app, duplicate_fingerprint, normalize_description
 
 
@@ -54,16 +64,29 @@ def test_delete_account_with_transactions_requires_confirmation_and_cascades() -
         assert account.id is not None
         upload = UploadFile(account_id=account.id, original_filename="statement.csv", row_count=1, status="prepared")
         template = ImportTemplate(account_id=account.id, name=f"Delete Template {uuid4()}", config={"mappings": {}})
+        label = Label(
+            account_id=account.id,
+            slug=f"delete-label-{uuid4()}",
+            name="Delete Label",
+            is_system=False,
+        )
         session.add(upload)
         session.add(template)
+        session.add(label)
         session.commit()
         session.refresh(upload)
+        session.refresh(label)
         assert upload.id is not None
+        assert label.id is not None
         raw_row = RawImportRow(upload_file_id=upload.id, row_number=1, raw_data={"Description": "Coffee"})
+        rule = TransactionLabelRule(label_id=label.id, account_id=account.id, match_field="description", pattern="Coffee")
         session.add(raw_row)
+        session.add(rule)
         session.commit()
         session.refresh(raw_row)
+        session.refresh(rule)
         assert raw_row.id is not None
+        assert rule.id is not None
         transaction_date = date.fromisoformat("2026-01-01")
         normalized_description = normalize_description("Coffee")
         transaction = Transaction(
@@ -76,6 +99,8 @@ def test_delete_account_with_transactions_requires_confirmation_and_cascades() -
             normalized_description=normalized_description,
             amount=Decimal("4.50"),
             direction="debit",
+            label_id=label.id,
+            label_rule_id=rule.id,
             duplicate_fingerprint=duplicate_fingerprint(
                 account.id,
                 transaction_date,
@@ -90,6 +115,8 @@ def test_delete_account_with_transactions_requires_confirmation_and_cascades() -
         upload_id = upload.id
         raw_row_id = raw_row.id
         template_id = template.id
+        label_id = label.id
+        rule_id = rule.id
 
     warning_response = client.delete(f"/accounts/{account_id}")
 
@@ -104,4 +131,6 @@ def test_delete_account_with_transactions_requires_confirmation_and_cascades() -
         assert session.get(UploadFile, upload_id) is None
         assert session.get(RawImportRow, raw_row_id) is None
         assert session.get(ImportTemplate, template_id) is None
+        assert session.get(Label, label_id) is None
+        assert session.get(TransactionLabelRule, rule_id) is None
         assert session.exec(select(Transaction).where(Transaction.account_id == account_id)).all() == []
