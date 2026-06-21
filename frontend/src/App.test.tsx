@@ -588,11 +588,11 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save Template" }));
 
     expect(await screen.findByText("Template saved for future imports.")).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Checking export" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Checking export/ })).toBeInTheDocument();
     resolveTemplateLoad([]);
 
     await waitFor(() => {
-      expect(screen.getByRole("option", { name: "Checking export" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Checking export/ })).toBeInTheDocument();
     });
   });
 
@@ -743,7 +743,7 @@ describe("App", () => {
     continueToMappings();
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Template"), { target: { value: "7" } });
+    fireEvent.click(screen.getByRole("button", { name: /Account export/ }));
     continueToReview();
 
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
@@ -793,7 +793,7 @@ describe("App", () => {
     continueToMappings();
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Template"), { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: /Checking/ }));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Next: review" })).not.toBeDisabled();
     });
@@ -848,7 +848,7 @@ describe("App", () => {
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
     continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Template"), { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: /Checking/ }));
     continueToReview();
 
     expect(await screen.findByText("Row 1 missing required field: amount")).toBeInTheDocument();

@@ -838,6 +838,20 @@ function Home() {
     setDescriptionParts(nextDescriptionParts.length > 0 ? nextDescriptionParts : createDefaultDescriptionParts());
   }
 
+  function startNewTemplate() {
+    setSelectedTemplateId("new");
+    setTemplateName("");
+    setMappingDraft(createEmptyMappings());
+    setTransformDraft(createDefaultTransforms());
+    setAmountMode("single");
+    setDescriptionParts(createDefaultDescriptionParts());
+    setTemplateStatus(null);
+    setTemplateError(null);
+    setPreparedImport(null);
+    setImportResult(null);
+    setImportStatus(null);
+  }
+
   function buildTemplateConfig(): ImportTemplateConfig {
     const splitColumns = {
       debit_column: mappingDraft.debit,
@@ -1527,42 +1541,35 @@ function Home() {
               <div className="template-editor-header">
                 <div>
                   <h3>Import Template</h3>
-                  <p>Choose an existing account template, or add a new one when this CSV layout is unfamiliar.</p>
+                  <p>Select a saved template, or add a new one when this CSV layout is unfamiliar.</p>
                 </div>
-                <label>
-                  <span>Template</span>
-                  <select
-                    value={selectedTemplateId}
-                    onChange={(event) => {
-                      const value = event.target.value === "new" ? "new" : Number(event.target.value);
-                      setSelectedTemplateId(value);
-                      setTemplateStatus(null);
-                      setTemplateError(null);
-                      setPreparedImport(null);
-                      setImportResult(null);
-                      setImportStatus(null);
-                      if (value === "new") {
-                        setTemplateName("");
-                        setMappingDraft(createEmptyMappings());
-                        setTransformDraft(createDefaultTransforms());
-                        setAmountMode("single");
-                        setDescriptionParts(createDefaultDescriptionParts());
-                        return;
-                      }
-                      const template = templates.find((candidate) => candidate.id === value);
-                      if (template) {
+                <button type="button" className="secondary-action" onClick={startNewTemplate}>+ New template</button>
+              </div>
+              <div className="template-choice-list" aria-label="Import templates">
+                {templates.length > 0 ? templates.map((template) => {
+                  const isSelected = selectedTemplateId === template.id;
+                  return (
+                    <button
+                      key={template.id}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => {
+                        setSelectedTemplateId(template.id);
+                        setTemplateStatus(null);
+                        setTemplateError(null);
+                        setPreparedImport(null);
+                        setImportResult(null);
+                        setImportStatus(null);
                         applyTemplateToDraft(template);
-                      }
-                    }}
-                  >
-                    <option value="new">New template</option>
-                    {templates.map((template) => (
-                      <option key={template.id} value={template.id}>
-                        {template.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                      }}
+                    >
+                      <strong>{template.name}</strong>
+                      <span>{isSelected ? "Selected" : "Use this template"}</span>
+                    </button>
+                  );
+                }) : (
+                  <p>No templates saved for {activeAccount?.name ?? "this account"} yet.</p>
+                )}
               </div>
               {selectedTemplate ? (
                 <div className="selected-template-summary">
@@ -1572,6 +1579,10 @@ function Home() {
               ) : null}
               {showMappingStep ? (
               <div className="mapping-section">
+                <section className="csv-preview" aria-labelledby="mapping-csv-preview-heading">
+                  <div className="section-header-row"><div><h3 id="mapping-csv-preview-heading">CSV preview</h3><p>Use these uploaded headers and sample rows while choosing source columns.</p></div><span>{preview.rows.length} preview row(s)</span></div>
+                  <div className="table-wrap"><table><thead><tr>{preview.headers.map((header) => <th key={header} scope="col">{header}</th>)}</tr></thead><tbody>{preview.rows.map((row, index) => <tr key={index}>{preview.headers.map((header) => <td key={header}>{row[header] ?? ""}</td>)}</tr>)}</tbody></table></div>
+                </section>
                 <label className="template-name">
                   <span>Template name</span>
                   <input
