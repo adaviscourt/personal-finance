@@ -245,21 +245,8 @@ describe("App", () => {
           created_at: "2026-01-16T00:00:00+00:00",
         },
       ])
-      .mockResolvedValueOnce([
-        {
-          id: 23,
-          original_filename: "prepared.csv",
-          account_id: 1,
-          account_name: "Checking Account",
-          status: "removed",
-          row_count: 16,
-          imported_transaction_count: 0,
-          min_transaction_date: null,
-          max_transaction_date: null,
-          created_at: "2026-01-16T00:00:00+00:00",
-        },
-      ]);
-    mockedDeleteImportUpload.mockResolvedValue({ upload_file_id: 23, deleted_transaction_count: 0, status: "removed" });
+      .mockResolvedValueOnce([]);
+    mockedDeleteImportUpload.mockResolvedValue({ upload_file_id: 23, deleted_transaction_count: 0, status: "deleted" });
 
     renderApp("/import");
 
@@ -268,6 +255,9 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm discard" }));
 
     expect(await screen.findByText("Discarded prepared.csv.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("prepared.csv")).not.toBeInTheDocument();
+    });
     expect(mockedDeleteImportUpload).toHaveBeenCalledWith(23);
   });
 

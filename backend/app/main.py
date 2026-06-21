@@ -953,6 +953,17 @@ def delete_import_upload_transactions(upload_file_id: int) -> ImportUploadDelete
 
         transactions = session.exec(select(Transaction).where(Transaction.upload_file_id == upload_file_id)).all()
         deleted_count = len(transactions)
+        if deleted_count == 0:
+            for raw_row in session.exec(select(RawImportRow).where(RawImportRow.upload_file_id == upload_file_id)).all():
+                session.delete(raw_row)
+            session.delete(upload)
+            session.commit()
+            return ImportUploadDeleteResponse(
+                upload_file_id=upload_file_id,
+                deleted_transaction_count=0,
+                status="deleted",
+            )
+
         for transaction in transactions:
             session.delete(transaction)
         upload.status = "removed"

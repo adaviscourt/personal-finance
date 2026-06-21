@@ -108,6 +108,28 @@ def test_prepare_persists_upload_and_raw_rows_without_transactions() -> None:
     assert transactions == []
 
 
+def test_delete_prepared_upload_discards_raw_rows_and_upload() -> None:
+    client = TestClient(app)
+    account = create_account(f"Issue Discard Prepared Account {uuid4()}")
+    prepare_response = prepare_import(
+        client,
+        account.id or 0,
+        "Date,Description,Amount,Type,Category,Balance,Check\n2026-01-01,Coffee,-4.50,Sale,Dining,100.00,\n",
+    )
+    upload_file_id = prepare_response.json()["upload_file_id"]
+
+    response = client.delete(f"/imports/uploads/{upload_file_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"upload_file_id": upload_file_id, "deleted_transaction_count": 0, "status": "deleted"}
+    with Session(engine) as session:
+        upload = session.get(UploadFile, upload_file_id)
+        raw_rows = session.exec(select(RawImportRow).where(RawImportRow.upload_file_id == upload_file_id)).all()
+
+    assert upload is None
+    assert raw_rows == []
+
+
 def test_prepare_supports_split_debit_credit_columns() -> None:
     client = TestClient(app)
     account = create_account(f"Issue Split Prepare Account {uuid4()}")
