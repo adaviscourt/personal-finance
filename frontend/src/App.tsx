@@ -572,7 +572,11 @@ function Home() {
     try {
       const result = await deleteImportUpload(upload.id);
       setConfirmingDeleteUploadId(null);
-      setImportStatus(`Removed ${result.deleted_transaction_count} transaction(s) from ${upload.original_filename}.`);
+      setImportStatus(
+        result.deleted_transaction_count > 0
+          ? `Removed ${result.deleted_transaction_count} transaction(s) from ${upload.original_filename}.`
+          : `Discarded ${upload.original_filename}.`,
+      );
       await refreshImportUploads();
       refreshDashboard();
     } catch {
@@ -1462,7 +1466,7 @@ function Home() {
                           {confirmingDeleteUploadId === upload.id ? (
                             <span className="inline-confirmation">
                               <button type="button" className="danger-action" disabled={deletingUploadId === upload.id} onClick={() => handleDeleteImportUpload(upload)}>
-                                {deletingUploadId === upload.id ? "Removing..." : "Confirm remove"}
+                                {deletingUploadId === upload.id ? "Removing..." : upload.imported_transaction_count > 0 ? "Confirm remove" : "Confirm discard"}
                               </button>
                               <button type="button" className="secondary-action" onClick={() => setConfirmingDeleteUploadId(null)}>Cancel</button>
                             </span>
@@ -1470,10 +1474,10 @@ function Home() {
                             <button
                               type="button"
                               className="danger-action"
-                              disabled={upload.status === "removed" || upload.imported_transaction_count === 0}
+                              disabled={upload.status === "removed"}
                               onClick={() => setConfirmingDeleteUploadId(upload.id)}
                             >
-                              Remove transactions
+                              {upload.imported_transaction_count > 0 ? "Remove transactions" : "Discard upload"}
                             </button>
                           )}
                         </td>

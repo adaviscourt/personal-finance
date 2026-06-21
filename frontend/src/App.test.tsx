@@ -229,6 +229,48 @@ describe("App", () => {
     expect(mockedDeleteImportUpload).toHaveBeenCalledWith(22);
   });
 
+  it("allows prepared uploads with no imported transactions to be discarded", async () => {
+    mockedListImportUploads
+      .mockResolvedValueOnce([
+        {
+          id: 23,
+          original_filename: "prepared.csv",
+          account_id: 1,
+          account_name: "Checking Account",
+          status: "prepared",
+          row_count: 16,
+          imported_transaction_count: 0,
+          min_transaction_date: null,
+          max_transaction_date: null,
+          created_at: "2026-01-16T00:00:00+00:00",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 23,
+          original_filename: "prepared.csv",
+          account_id: 1,
+          account_name: "Checking Account",
+          status: "removed",
+          row_count: 16,
+          imported_transaction_count: 0,
+          min_transaction_date: null,
+          max_transaction_date: null,
+          created_at: "2026-01-16T00:00:00+00:00",
+        },
+      ]);
+    mockedDeleteImportUpload.mockResolvedValue({ upload_file_id: 23, deleted_transaction_count: 0, status: "removed" });
+
+    renderApp("/import");
+
+    expect(await screen.findByText("prepared.csv")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Discard upload" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm discard" }));
+
+    expect(await screen.findByText("Discarded prepared.csv.")).toBeInTheDocument();
+    expect(mockedDeleteImportUpload).toHaveBeenCalledWith(23);
+  });
+
   it("presents import steps and contextual validation before preparing", async () => {
     mockedPreviewCsv.mockResolvedValue({
       headers: ["Date", "Description", "Amount"],
