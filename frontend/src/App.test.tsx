@@ -226,6 +226,8 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm remove" }));
 
     expect(await screen.findByText("Removed 2 transaction(s) from checking.csv.")).toBeInTheDocument();
+    expect(screen.getByText("No action")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove transactions" })).not.toBeInTheDocument();
     expect(mockedDeleteImportUpload).toHaveBeenCalledWith(22);
   });
 

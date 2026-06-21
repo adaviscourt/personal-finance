@@ -1463,7 +1463,9 @@ function Home() {
                         <td>{formatUploadDateRange(upload)}</td>
                         <td>{formatDisplayDate(upload.created_at.slice(0, 10))}</td>
                         <td>
-                          {confirmingDeleteUploadId === upload.id ? (
+                          {upload.status === "removed" ? (
+                            <span className="upload-action-empty" aria-label="No action available">No action</span>
+                          ) : confirmingDeleteUploadId === upload.id ? (
                             <span className="inline-confirmation">
                               <button type="button" className="danger-action" disabled={deletingUploadId === upload.id} onClick={() => handleDeleteImportUpload(upload)}>
                                 {deletingUploadId === upload.id ? "Removing..." : upload.imported_transaction_count > 0 ? "Confirm remove" : "Confirm discard"}
@@ -1474,7 +1476,6 @@ function Home() {
                             <button
                               type="button"
                               className="danger-action"
-                              disabled={upload.status === "removed"}
                               onClick={() => setConfirmingDeleteUploadId(upload.id)}
                             >
                               {upload.imported_transaction_count > 0 ? "Remove transactions" : "Discard upload"}

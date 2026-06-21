@@ -365,6 +365,12 @@ summary:focus-visible {
   color: var(--muted);
 }
 
+.upload-action-empty {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
 .inline-confirmation {
   display: inline-flex;
   flex-wrap: wrap;
