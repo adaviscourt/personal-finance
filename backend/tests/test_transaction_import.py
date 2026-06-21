@@ -108,6 +108,28 @@ def test_prepare_persists_upload_and_raw_rows_without_transactions() -> None:
     assert transactions == []
 
 
+def test_delete_prepared_upload_discards_raw_rows_and_upload() -> None:
+    client = TestClient(app)
+    account = create_account(f"Issue Discard Prepared Account {uuid4()}")
+    prepare_response = prepare_import(
+        client,
+        account.id or 0,
+        "Date,Description,Amount,Type,Category,Balance,Check\n2026-01-01,Coffee,-4.50,Sale,Dining,100.00,\n",
+    )
+    upload_file_id = prepare_response.json()["upload_file_id"]
+
+    response = client.delete(f"/imports/uploads/{upload_file_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"upload_file_id": upload_file_id, "deleted_transaction_count": 0, "status": "deleted"}
+    with Session(engine) as session:
+        upload = session.get(UploadFile, upload_file_id)
+        raw_rows = session.exec(select(RawImportRow).where(RawImportRow.upload_file_id == upload_file_id)).all()
+
+    assert upload is None
+    assert raw_rows == []
+
+
 def test_prepare_supports_split_debit_credit_columns() -> None:
     client = TestClient(app)
     account = create_account(f"Issue Split Prepare Account {uuid4()}")
@@ -260,3 +282,81 @@ def test_confirm_import_warns_about_duplicates_before_inserting() -> None:
     assert imported_transactions == []
     assert upload is not None
     assert upload.status == "duplicate_warning"
+
+
+def test_list_import_uploads_summarizes_confirmed_transactions() -> None:
+    client = TestClient(app)
+    account = create_account(f"Issue Upload Summary Account {uuid4()}")
+    prepare_response = prepare_import(
+        client,
+        account.id or 0,
+        "Date,Description,Amount,Type,Category,Balance,Check\n"
+        "2026-04-02,Coffee,-4.50,Sale,Dining,,\n"
+        "2026-04-05,Payroll,100.00,ACH,Income,,\n",
+    )
+    upload_file_id = prepare_response.json()["upload_file_id"]
+
+    confirm_response = client.post(
+        "/imports/confirm",
+        json={"upload_file_id": upload_file_id, "template_config": import_template_config()},
+    )
+    response = client.get("/imports/uploads")
+
+    assert confirm_response.status_code == 200
+    assert response.status_code == 200
+    upload_summary = next(upload for upload in response.json() if upload["id"] == upload_file_id)
+    assert upload_summary == {
+        "id": upload_file_id,
+        "original_filename": "statement.csv",
+        "account_id": account.id,
+        "account_name": account.name,
+        "status": "imported",
+        "row_count": 2,
+        "imported_transaction_count": 2,
+        "min_transaction_date": "2026-04-02",
+        "max_transaction_date": "2026-04-05",
+        "created_at": upload_summary["created_at"],
+    }
+
+
+def test_delete_import_upload_transactions_preserves_upload_and_raw_rows() -> None:
+    client = TestClient(app)
+    account = create_account(f"Issue Upload Delete Account {uuid4()}")
+    prepare_response = prepare_import(
+        client,
+        account.id or 0,
+        "Date,Description,Amount,Type,Category,Balance,Check\n2026-05-01,Coffee,-4.50,Sale,Dining,,\n",
+    )
+    upload_file_id = prepare_response.json()["upload_file_id"]
+    client.post(
+        "/imports/confirm",
+        json={"upload_file_id": upload_file_id, "template_config": import_template_config()},
+    )
+
+    response = client.delete(f"/imports/uploads/{upload_file_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "upload_file_id": upload_file_id,
+        "deleted_transaction_count": 1,
+        "status": "removed",
+    }
+    with Session(engine) as session:
+        upload = session.get(UploadFile, upload_file_id)
+        raw_rows = session.exec(select(RawImportRow).where(RawImportRow.upload_file_id == upload_file_id)).all()
+        transactions = session.exec(select(Transaction).where(Transaction.upload_file_id == upload_file_id)).all()
+
+    assert upload is not None
+    assert upload.status == "removed"
+    assert len(raw_rows) == 1
+    assert transactions == []
+
+
+def test_delete_import_upload_transactions_rejects_missing_upload() -> None:
+    init_db()
+    client = TestClient(app)
+
+    response = client.delete("/imports/uploads/999999")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Upload file not found."}

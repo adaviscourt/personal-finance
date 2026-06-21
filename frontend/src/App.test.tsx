@@ -10,6 +10,7 @@ import {
   createLabelRule,
   createImportTemplate,
   deleteAccount,
+  deleteImportUpload,
   deleteLabelRule,
   getDashboardSpendingByLabel,
   getDashboardTransactions,
@@ -17,6 +18,7 @@ import {
   listLabelRules,
   listLabels,
   listImportTemplates,
+  listImportUploads,
   previewCsv,
   previewLabelRuleMatches,
   prepareImport,
@@ -32,6 +34,7 @@ vi.mock("./api/client", () => ({
   createLabelRule: vi.fn(),
   createImportTemplate: vi.fn(),
   deleteAccount: vi.fn(),
+  deleteImportUpload: vi.fn(),
   deleteLabelRule: vi.fn(),
   getDashboardSpendingByLabel: vi.fn(),
   getDashboardTransactions: vi.fn(),
@@ -39,6 +42,7 @@ vi.mock("./api/client", () => ({
   listLabelRules: vi.fn(),
   listLabels: vi.fn(),
   listImportTemplates: vi.fn(),
+  listImportUploads: vi.fn(),
   previewCsv: vi.fn(),
   previewLabelRuleMatches: vi.fn(),
   prepareImport: vi.fn(),
@@ -53,6 +57,7 @@ const mockedCreateLabel = vi.mocked(createLabel);
 const mockedCreateLabelRule = vi.mocked(createLabelRule);
 const mockedCreateImportTemplate = vi.mocked(createImportTemplate);
 const mockedDeleteAccount = vi.mocked(deleteAccount);
+const mockedDeleteImportUpload = vi.mocked(deleteImportUpload);
 const mockedDeleteLabelRule = vi.mocked(deleteLabelRule);
 const mockedGetDashboardSpendingByLabel = vi.mocked(getDashboardSpendingByLabel);
 const mockedGetDashboardTransactions = vi.mocked(getDashboardTransactions);
@@ -60,6 +65,7 @@ const mockedListAccounts = vi.mocked(listAccounts);
 const mockedListLabelRules = vi.mocked(listLabelRules);
 const mockedListLabels = vi.mocked(listLabels);
 const mockedListImportTemplates = vi.mocked(listImportTemplates);
+const mockedListImportUploads = vi.mocked(listImportUploads);
 const mockedPreviewCsv = vi.mocked(previewCsv);
 const mockedPreviewLabelRuleMatches = vi.mocked(previewLabelRuleMatches);
 const mockedPrepareImport = vi.mocked(prepareImport);
@@ -83,6 +89,22 @@ function renderApp(route = "/") {
       <App />
     </MemoryRouter>,
   );
+}
+
+async function continueToSourceFile() {
+  fireEvent.click(await screen.findByRole("button", { name: "Next: source" }));
+}
+
+function continueToMappings() {
+  fireEvent.click(screen.getByRole("button", { name: "Next: mapping" }));
+}
+
+function continueToReview() {
+  fireEvent.click(screen.getByRole("button", { name: "Next: review" }));
+}
+
+function continueToConfirm() {
+  fireEvent.click(screen.getByRole("button", { name: "Next: confirm" }));
 }
 
 describe("App", () => {
@@ -116,12 +138,14 @@ describe("App", () => {
       },
     ]);
     mockedListImportTemplates.mockResolvedValue([]);
+    mockedListImportUploads.mockResolvedValue([]);
     mockedPreviewCsv.mockReset();
     mockedPreviewLabelRuleMatches.mockReset();
     mockedCreateLabelRule.mockReset();
     mockedCreateLabel.mockReset();
     mockedCreateAccount.mockReset();
     mockedDeleteAccount.mockReset();
+    mockedDeleteImportUpload.mockReset();
     mockedDeleteLabelRule.mockReset();
     mockedCreateImportTemplate.mockReset();
     mockedConfirmImport.mockReset();
@@ -135,6 +159,7 @@ describe("App", () => {
     mockedGetDashboardTransactions.mockResolvedValue({ month: "2026-01", transactions: [] });
     mockedPreviewLabelRuleMatches.mockResolvedValue({ total_count: 0, returned_count: 0, rows: [] });
     mockedDeleteLabelRule.mockResolvedValue();
+    mockedDeleteImportUpload.mockResolvedValue({ upload_file_id: 1, deleted_transaction_count: 0, status: "removed" });
   });
 
   it("renders primary module navigation and a dashboard-only home route", async () => {
@@ -157,7 +182,85 @@ describe("App", () => {
     renderApp("/import");
 
     expect(screen.getByRole("link", { name: "Import" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByText("Import transactions in guided order")).toBeInTheDocument();
+    expect(screen.getByText("Imported files")).toBeInTheDocument();
+  });
+
+  it("shows import upload ledger rows and removes transactions by upload", async () => {
+    mockedListImportUploads
+      .mockResolvedValueOnce([
+        {
+          id: 22,
+          original_filename: "checking.csv",
+          account_id: 1,
+          account_name: "Checking Account",
+          status: "imported",
+          row_count: 2,
+          imported_transaction_count: 2,
+          min_transaction_date: "2026-01-01",
+          max_transaction_date: "2026-01-15",
+          created_at: "2026-01-16T00:00:00+00:00",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 22,
+          original_filename: "checking.csv",
+          account_id: 1,
+          account_name: "Checking Account",
+          status: "removed",
+          row_count: 2,
+          imported_transaction_count: 0,
+          min_transaction_date: null,
+          max_transaction_date: null,
+          created_at: "2026-01-16T00:00:00+00:00",
+        },
+      ]);
+    mockedDeleteImportUpload.mockResolvedValue({ upload_file_id: 22, deleted_transaction_count: 2, status: "removed" });
+
+    renderApp("/import");
+
+    expect(await screen.findByText("checking.csv")).toBeInTheDocument();
+    expect(screen.getByText("Checking Account")).toBeInTheDocument();
+    expect(screen.getByText("2026-01-01 to 2026-01-15")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Remove transactions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm remove" }));
+
+    expect(await screen.findByText("Removed 2 transaction(s) from checking.csv.")).toBeInTheDocument();
+    expect(screen.getByText("No action")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove transactions" })).not.toBeInTheDocument();
+    expect(mockedDeleteImportUpload).toHaveBeenCalledWith(22);
+  });
+
+  it("allows prepared uploads with no imported transactions to be discarded", async () => {
+    mockedListImportUploads
+      .mockResolvedValueOnce([
+        {
+          id: 23,
+          original_filename: "prepared.csv",
+          account_id: 1,
+          account_name: "Checking Account",
+          status: "prepared",
+          row_count: 16,
+          imported_transaction_count: 0,
+          min_transaction_date: null,
+          max_transaction_date: null,
+          created_at: "2026-01-16T00:00:00+00:00",
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    mockedDeleteImportUpload.mockResolvedValue({ upload_file_id: 23, deleted_transaction_count: 0, status: "deleted" });
+
+    renderApp("/import");
+
+    expect(await screen.findByText("prepared.csv")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Discard upload" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm discard" }));
+
+    expect(await screen.findByText("Discarded prepared.csv.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("prepared.csv")).not.toBeInTheDocument();
+    });
+    expect(mockedDeleteImportUpload).toHaveBeenCalledWith(23);
   });
 
   it("presents import steps and contextual validation before preparing", async () => {
@@ -167,7 +270,7 @@ describe("App", () => {
       rows: [{ Date: "2026-01-01", Description: "Coffee", Amount: "-4.50" }],
     });
 
-    renderApp("/import");
+    renderApp("/import/new");
 
     expect(screen.getByText("1. Account")).toBeInTheDocument();
     expect(screen.getByText("2. Source file")).toBeInTheDocument();
@@ -175,6 +278,7 @@ describe("App", () => {
     expect(screen.getByText("4. Review")).toBeInTheDocument();
     expect(screen.getByText("5. Confirm")).toBeInTheDocument();
     expect(await screen.findByLabelText("Import account")).toBeInTheDocument();
+    await continueToSourceFile();
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
     expect(screen.getByText("Choose a source CSV file first.")).toBeInTheDocument();
@@ -183,14 +287,14 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
-    expect(await screen.findByText("Next: update transform preview")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Update transform preview" })).toBeDisabled();
+    expect(await screen.findByText("CSV preview")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next: mapping" })).toBeEnabled();
   });
 
   it("sends users to accounts before import when no accounts exist", async () => {
     mockedListAccounts.mockResolvedValueOnce([]);
 
-    renderApp("/import");
+    renderApp("/import/new");
 
     expect(await screen.findByText("Create an account before importing")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Go to accounts" })).toHaveAttribute("href", "/accounts");
@@ -204,7 +308,8 @@ describe("App", () => {
       rows: [{ Date: "2026-01-01", Description: "Coffee", Amount: "-4.50" }],
     });
 
-    renderApp("/import");
+    renderApp("/import/new");
+    await continueToSourceFile();
 
     const input = await screen.findByLabelText("Statement CSV") as HTMLInputElement;
     const file = new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv", {
@@ -441,15 +546,20 @@ describe("App", () => {
       },
     });
 
-    renderApp("/import");
+    renderApp("/import/new");
+    await continueToSourceFile();
 
     const file = new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv", {
       type: "text/csv",
     });
     fireEvent.change(await screen.findByLabelText("Statement CSV"), { target: { files: [file] } });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText("CSV preview")).toBeInTheDocument();
+    continueToMappings();
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Template name")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ New template" }));
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Checking export" } });
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
@@ -497,13 +607,17 @@ describe("App", () => {
       },
     });
 
-    renderApp("/import");
+    renderApp("/import/new");
+    await continueToSourceFile();
 
     fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv")] },
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText("CSV preview")).toBeInTheDocument();
+    continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ New template" }));
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Checking export" } });
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
@@ -511,11 +625,11 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save Template" }));
 
     expect(await screen.findByText("Template saved for future imports.")).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Checking export" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Checking export/ })).toBeInTheDocument();
     resolveTemplateLoad([]);
 
     await waitFor(() => {
-      expect(screen.getByRole("option", { name: "Checking export" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Checking export/ })).toBeInTheDocument();
     });
   });
 
@@ -541,13 +655,17 @@ describe("App", () => {
       },
     });
 
-    renderApp("/import");
+    renderApp("/import/new");
+    await continueToSourceFile();
 
     fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Debit,Credit\n2026-01-01,Coffee,4.50,\n"], "statement.csv")] },
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText("CSV preview")).toBeInTheDocument();
+    continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ New template" }));
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Split checking" } });
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
@@ -592,13 +710,17 @@ describe("App", () => {
       },
     });
 
-    renderApp("/import");
+    renderApp("/import/new");
+    await continueToSourceFile();
 
     fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Check No,Amount\n2026-01-01,Coffee,1001,-4.50\n"], "statement.csv")] },
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText("CSV preview")).toBeInTheDocument();
+    continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ New template" }));
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Composed description" } });
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
@@ -649,16 +771,18 @@ describe("App", () => {
       duplicate_candidates: [],
     });
 
-    renderApp("/import");
+    renderApp("/import/new");
+    await continueToSourceFile();
 
     fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv")] },
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText("CSV preview")).toBeInTheDocument();
+    continueToMappings();
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Template"), { target: { value: "7" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
+    fireEvent.click(screen.getByRole("button", { name: /Account export/ }));
 
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
     expect(screen.queryByLabelText("Template name")).not.toBeInTheDocument();
@@ -696,20 +820,18 @@ describe("App", () => {
       duplicate_candidates: [],
     });
 
-    renderApp("/import");
+    renderApp("/import/new");
+    await continueToSourceFile();
 
     fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Debit,Credit\n2026-01-01,Coffee,4.50,\n"], "statement.csv")] },
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText("CSV preview")).toBeInTheDocument();
+    continueToMappings();
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Template"), { target: { value: "8" } });
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Update transform preview" })).not.toBeDisabled();
-    });
-    const updateButton = screen.getByRole("button", { name: "Update transform preview" });
-    fireEvent.click(updateButton);
+    fireEvent.click(screen.getByRole("button", { name: /Checking/ }));
 
     await waitFor(() => {
       expect(mockedPrepareImport).toHaveBeenCalled();
@@ -750,15 +872,17 @@ describe("App", () => {
     });
     mockedPrepareImport.mockRejectedValue({ response: { data: { detail: "Row 1 missing required field: amount" } } });
 
-    renderApp("/import");
+    renderApp("/import/new");
+    await continueToSourceFile();
 
     fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Debit,Credit\n2026-01-01,Coffee,,\n"], "statement.csv")] },
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText("CSV preview")).toBeInTheDocument();
+    continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Template"), { target: { value: "8" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
+    fireEvent.click(screen.getByRole("button", { name: /Checking/ }));
 
     expect(await screen.findByText("Row 1 missing required field: amount")).toBeInTheDocument();
   });
@@ -892,23 +1016,28 @@ describe("App", () => {
     });
     mockedConfirmImport.mockResolvedValue({ upload_file_id: 22, inserted_count: 1, duplicate_candidates: [] });
 
-    renderApp("/import");
+    renderApp("/import/new");
 
     const file = new File(["Date,Description,Amount\n2026-01-01,Coffee,-4.50\n"], "statement.csv", {
       type: "text/csv",
     });
     fireEvent.change(await screen.findByLabelText("Import account"), { target: { value: "42" } });
+    await continueToSourceFile();
     fireEvent.change(await screen.findByLabelText("Statement CSV"), { target: { files: [file] } });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
-
+    expect(await screen.findByText("CSV preview")).toBeInTheDocument();
+    continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ New template" }));
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
     fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
+    continueToReview();
 
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
     expect(screen.getAllByText("debit").length).toBeGreaterThan(0);
+    continueToConfirm();
+    expect(screen.queryByText("Transform preview updated for 1 row(s). Review before confirming.")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
 
     expect(await screen.findByText("Imported 1 transaction(s).")).toBeInTheDocument();
@@ -931,21 +1060,25 @@ describe("App", () => {
     });
     mockedConfirmImport.mockResolvedValue({ upload_file_id: 22, inserted_count: 1, duplicate_candidates: [] });
 
-    renderApp("/import");
+    renderApp("/import/new");
 
     const file = new File(["Date,Description,Amount\n2026-03-15,Coffee,-4.50\n"], "statement.csv", {
       type: "text/csv",
     });
     fireEvent.change(await screen.findByLabelText("Import account"), { target: { value: "42" } });
+    await continueToSourceFile();
     fireEvent.change(await screen.findByLabelText("Statement CSV"), { target: { files: [file] } });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
-
+    expect(await screen.findByText("CSV preview")).toBeInTheDocument();
+    continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ New template" }));
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
     fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
+    continueToReview();
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
+    continueToConfirm();
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
 
     const reviewLink = await screen.findByRole("link", { name: "Review March 2026 imports on dashboard" });
@@ -976,19 +1109,24 @@ describe("App", () => {
       duplicate_candidates: [{ row_number: 1, existing_transaction_id: 9, date: "2026-03-15", description: "Coffee", amount: "4.50", direction: "debit" }],
     });
 
-    renderApp("/import");
+    renderApp("/import/new");
 
     fireEvent.change(await screen.findByLabelText("Import account"), { target: { value: "42" } });
+    await continueToSourceFile();
     fireEvent.change(await screen.findByLabelText("Statement CSV"), {
       target: { files: [new File(["Date,Description,Amount\n2026-03-15,Coffee,-4.50\n"], "statement.csv")] },
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText("CSV preview")).toBeInTheDocument();
+    continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ New template" }));
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
     fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
+    continueToReview();
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
+    continueToConfirm();
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
 
     expect(await screen.findByText("Duplicate warning found; no transactions inserted.")).toBeInTheDocument();

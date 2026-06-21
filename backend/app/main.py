@@ -142,6 +142,25 @@ class ConfirmImportResponse(BaseModel):
     duplicate_candidates: list[dict[str, Any]]
 
 
+class ImportUploadSummaryResponse(BaseModel):
+    id: int
+    original_filename: str
+    account_id: int | None
+    account_name: str | None
+    status: str
+    row_count: int
+    imported_transaction_count: int
+    min_transaction_date: str | None
+    max_transaction_date: str | None
+    created_at: str
+
+
+class ImportUploadDeleteResponse(BaseModel):
+    upload_file_id: int
+    deleted_transaction_count: int
+    status: str
+
+
 class ImportTemplatePayload(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     account_id: int
@@ -338,6 +357,14 @@ def serialize_account(account: Account, transaction_count: int) -> AccountRespon
         created_at=account.created_at.isoformat(),
         transaction_count=transaction_count,
     )
+
+
+def serialize_optional_date(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
 
 
 def require_unique_account_name(session: Session, name: str, account_id: int | None = None) -> None:
@@ -877,6 +904,77 @@ def delete_account(account_id: int, confirmed: bool = False) -> AccountDeleteWar
         session.delete(account)
         session.commit()
     return Response(status_code=204)
+
+
+@app.get("/imports/uploads")
+def list_import_uploads() -> list[ImportUploadSummaryResponse]:
+    with Session(engine) as session:
+        rows = session.exec(
+            select(
+                StoredUploadFile,
+                Account.name,
+                func.count(col(Transaction.id)),
+                func.min(Transaction.transaction_date),
+                func.max(Transaction.transaction_date),
+            )
+            .join(Account, col(StoredUploadFile.account_id) == Account.id, isouter=True)
+            .join(Transaction, col(StoredUploadFile.id) == Transaction.upload_file_id, isouter=True)
+            .group_by(col(StoredUploadFile.id), Account.name)
+            .order_by(col(StoredUploadFile.created_at).desc(), col(StoredUploadFile.id).desc())
+        ).all()
+
+    summaries: list[ImportUploadSummaryResponse] = []
+    for upload, account_name, transaction_count, min_date, max_date in rows:
+        if upload.id is None:
+            raise HTTPException(status_code=500, detail="Saved upload is missing an id.")
+        summaries.append(
+            ImportUploadSummaryResponse(
+                id=upload.id,
+                original_filename=upload.original_filename,
+                account_id=upload.account_id,
+                account_name=account_name,
+                status=upload.status,
+                row_count=upload.row_count,
+                imported_transaction_count=transaction_count,
+                min_transaction_date=serialize_optional_date(min_date),
+                max_transaction_date=serialize_optional_date(max_date),
+                created_at=upload.created_at.isoformat(),
+            )
+        )
+    return summaries
+
+
+@app.delete("/imports/uploads/{upload_file_id}")
+def delete_import_upload_transactions(upload_file_id: int) -> ImportUploadDeleteResponse:
+    with Session(engine) as session:
+        upload = session.get(StoredUploadFile, upload_file_id)
+        if upload is None:
+            raise HTTPException(status_code=404, detail="Upload file not found.")
+
+        transactions = session.exec(select(Transaction).where(Transaction.upload_file_id == upload_file_id)).all()
+        deleted_count = len(transactions)
+        if deleted_count == 0:
+            for raw_row in session.exec(select(RawImportRow).where(RawImportRow.upload_file_id == upload_file_id)).all():
+                session.delete(raw_row)
+            session.delete(upload)
+            session.commit()
+            return ImportUploadDeleteResponse(
+                upload_file_id=upload_file_id,
+                deleted_transaction_count=0,
+                status="deleted",
+            )
+
+        for transaction in transactions:
+            session.delete(transaction)
+        upload.status = "removed"
+        session.add(upload)
+        session.commit()
+
+    return ImportUploadDeleteResponse(
+        upload_file_id=upload_file_id,
+        deleted_transaction_count=deleted_count,
+        status="removed",
+    )
 
 
 @app.post("/imports/preview")
