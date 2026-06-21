@@ -1,22 +1,32 @@
 ## Purpose
 
 Defines dedicated transaction import workflow behavior, confirmed imports, and source context retention.
-
 ## Requirements
-
 ### Requirement: Provide dedicated import module
-The system SHALL provide a dedicated import module for CSV upload, template selection or editing, transformed preview, duplicate warning review, and import confirmation.
+The system SHALL provide a dedicated import module with an upload ledger entry page and a separate guided flow for CSV upload, template selection or editing, transformed preview, duplicate warning review, and import confirmation.
 
 #### Scenario: User opens import module
 - **WHEN** the user opens the import module
-- **THEN** CSV upload, import template, transformed preview, duplicate warning, and confirmation controls are available there instead of on the dashboard home page
+- **THEN** the import landing page shows prior file uploads and a clear action to start a new upload instead of showing the full import flow on the dashboard home page
+
+#### Scenario: User starts import flow
+- **WHEN** the user starts a new upload from the import landing page
+- **THEN** CSV upload, import template, transformed preview, duplicate warning, and confirmation controls are available in the guided import flow
 
 ### Requirement: Guide import workflow steps
-The system SHALL present import actions in a progressive guided order from account selection to confirmed import, including prescriptive template mapping controls for common CSV layouts.
+The system SHALL present import actions as separate progressive screens from account selection to confirmed import, including prescriptive template mapping controls for common CSV layouts, a step progress tracker, and back navigation for each step after the first.
 
 #### Scenario: User starts an import
 - **WHEN** the user starts an import workflow
 - **THEN** the interface presents the flow as choosing an account, selecting a CSV, reviewing CSV preview, choosing or editing account-scoped template mappings, preparing a transformed preview, reviewing warnings, and confirming import
+
+#### Scenario: Step progress shown
+- **WHEN** the user is in the guided import flow
+- **THEN** the system shows a progress tracker that identifies the current step, completed steps, and unavailable future steps
+
+#### Scenario: User goes back one step
+- **WHEN** the user activates a back action from a step after account selection
+- **THEN** the system returns to the previous import step without discarding valid inputs from earlier steps
 
 #### Scenario: No accounts exist
 - **WHEN** the user opens the import module before any account exists
@@ -112,3 +122,11 @@ The system SHALL show contextual prepare errors when import preparation fails be
 #### Scenario: Prepare fails
 - **WHEN** import preparation fails validation
 - **THEN** the import module displays the validation error near the import workflow and does not persist transactions
+
+### Requirement: Keep import flow visually focused
+The system SHALL show only the active import step's primary controls during the guided flow.
+
+#### Scenario: User advances through import
+- **WHEN** the user moves from one import step to the next
+- **THEN** the next step replaces the prior step as the primary content instead of appending below all prior steps
+
