@@ -183,6 +183,7 @@ def create_schema_indexes(database_engine=engine) -> None:
         "CREATE INDEX IF NOT EXISTS ix_transactions_duplicate_detection ON transactions (account_id, transaction_date, normalized_description, amount, direction)",
         "CREATE INDEX IF NOT EXISTS ix_transactions_dashboard_month ON transactions (transaction_month, direction, label_id)",
         "CREATE INDEX IF NOT EXISTS ix_transactions_label_rule_id ON transactions (label_rule_id)",
+        "CREATE INDEX IF NOT EXISTS ix_transactions_upload_date ON transactions (upload_file_id, transaction_date)",
         "CREATE INDEX IF NOT EXISTS ix_label_rules_matching ON transaction_label_rules (match_field, pattern)",
         "CREATE INDEX IF NOT EXISTS ix_label_rules_account_matching ON transaction_label_rules (account_id, match_field, match_type)",
         "CREATE INDEX IF NOT EXISTS ix_labels_account ON labels (account_id, name)",

@@ -8,6 +8,7 @@ import {
   createLabel,
   createLabelRule,
   createImportTemplate,
+  deleteImportUpload,
   deleteLabelRule,
   deleteAccount,
   getDashboardSpendingByLabel,
@@ -16,6 +17,7 @@ import {
   listLabelRules,
   listLabels,
   listImportTemplates,
+  listImportUploads,
   previewCsv,
   prepareImport,
   previewLabelRuleMatches,
@@ -30,6 +32,7 @@ import {
   type ImportPrepareResponse,
   type ImportTemplate,
   type ImportTemplateConfig,
+  type ImportUploadSummary,
   type LabelRule,
   type LabelRuleMatchPreview,
   type TemplateTransform,
@@ -49,12 +52,20 @@ const DEFAULT_TRANSFORMS: Record<(typeof REQUIRED_FIELDS)[number], TemplateTrans
   direction: "signed_amount_direction",
 };
 const CHART_COLORS = ["#0850c4", "#063d95", "#5868a8", "#7b5d2a", "#2f7282", "#8a4c82"];
+const IMPORT_STEPS: { id: ImportStep; label: string; help: string }[] = [
+  { id: "account", label: "Account", help: "Choose where these transactions belong." },
+  { id: "source", label: "Source file", help: "Select and preview the CSV rows." },
+  { id: "mapping", label: "Mappings", help: "Choose or edit account template mappings." },
+  { id: "review", label: "Review", help: "Prepare rows and check duplicate warnings." },
+  { id: "confirm", label: "Confirm", help: "Import, then review the month." },
+];
 
 type RequiredMappingField = (typeof REQUIRED_FIELDS)[number];
 type OptionalSplitField = (typeof OPTIONAL_SPLIT_FIELDS)[number];
 type MappingDraft = Record<RequiredMappingField | OptionalSplitField, string>;
 type TransformDraft = Record<(typeof REQUIRED_FIELDS)[number], TemplateTransform>;
 type AmountMode = "single" | "split";
+type ImportStep = "account" | "source" | "mapping" | "review" | "confirm";
 type DashboardSortKey = "date" | "account" | "description" | "label" | "direction" | "amount";
 type SortDirection = "asc" | "desc";
 type DashboardNetPoint = { month: string; amount: number };
@@ -220,6 +231,12 @@ function Home() {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importLoading, setImportLoading] = useState(false);
+  const [importStep, setImportStep] = useState<ImportStep>("account");
+  const [importUploads, setImportUploads] = useState<ImportUploadSummary[]>([]);
+  const [importUploadsLoading, setImportUploadsLoading] = useState(false);
+  const [importUploadsError, setImportUploadsError] = useState<string | null>(null);
+  const [confirmingDeleteUploadId, setConfirmingDeleteUploadId] = useState<number | null>(null);
+  const [deletingUploadId, setDeletingUploadId] = useState<number | null>(null);
   const [labels, setLabels] = useState<TransactionLabel[]>([]);
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelAccountId, setNewLabelAccountId] = useState<number | "">("");
@@ -254,6 +271,7 @@ function Home() {
 
   useEffect(() => {
     refreshAccounts();
+    refreshImportUploads();
   }, []);
 
   useEffect(() => {
@@ -481,10 +499,7 @@ function Home() {
         : `${dashboardLabelSlugs.length} selected`;
   const activeAccount = activeAccountId === "" ? null : accounts.find((account) => account.id === activeAccountId) ?? null;
   const hasPreview = Boolean(preview);
-  const showUploadStep = activeAccountId !== "";
-  const showTemplateStep = hasPreview;
   const showMappingStep = hasPreview && selectedTemplateId === "new";
-  const showImportReview = Boolean(preparedImport);
   const selectedTemplate = selectedTemplateId === "new" ? null : templates.find((template) => template.id === selectedTemplateId) ?? null;
   const selectedDescriptionParts = descriptionParts.filter((part) => part.trim());
   const missingMappingFields = [
@@ -533,6 +548,82 @@ function Home() {
       .finally(() => {
         setDashboardLoading(false);
       });
+  }
+
+  function refreshImportUploads() {
+    setImportUploadsLoading(true);
+    setImportUploadsError(null);
+    return listImportUploads()
+      .then((uploads) => setImportUploads(uploads))
+      .catch(() => {
+        setImportUploads([]);
+        setImportUploadsError("Could not load imported files.");
+      })
+      .finally(() => setImportUploadsLoading(false));
+  }
+
+  async function handleDeleteImportUpload(upload: ImportUploadSummary) {
+    setImportUploadsError(null);
+    setDeletingUploadId(upload.id);
+    try {
+      const result = await deleteImportUpload(upload.id);
+      setConfirmingDeleteUploadId(null);
+      setImportStatus(`Removed ${result.deleted_transaction_count} transaction(s) from ${upload.original_filename}.`);
+      await refreshImportUploads();
+      refreshDashboard();
+    } catch {
+      setImportUploadsError("Could not remove transactions for that file upload.");
+    } finally {
+      setDeletingUploadId(null);
+    }
+  }
+
+  function formatDisplayDate(value: string | null): string {
+    if (!value) {
+      return "Not imported";
+    }
+    return value;
+  }
+
+  function formatUploadDateRange(upload: ImportUploadSummary): string {
+    if (!upload.min_transaction_date || !upload.max_transaction_date) {
+      return "Not imported";
+    }
+    if (upload.min_transaction_date === upload.max_transaction_date) {
+      return upload.min_transaction_date;
+    }
+    return `${upload.min_transaction_date} to ${upload.max_transaction_date}`;
+  }
+
+  function importStepIndex(step: ImportStep): number {
+    return IMPORT_STEPS.findIndex((candidate) => candidate.id === step);
+  }
+
+  function canVisitImportStep(step: ImportStep): boolean {
+    if (step === "account") {
+      return true;
+    }
+    if (step === "source") {
+      return activeAccountId !== "";
+    }
+    if (step === "mapping") {
+      return Boolean(preview);
+    }
+    if (step === "review") {
+      return Boolean(preparedImport);
+    }
+    return Boolean(preparedImport);
+  }
+
+  function goToImportStep(step: ImportStep) {
+    if (canVisitImportStep(step)) {
+      setImportStep(step);
+    }
+  }
+
+  function previousImportStep(): ImportStep | null {
+    const index = importStepIndex(importStep);
+    return index > 0 ? IMPORT_STEPS[index - 1].id : null;
   }
 
   function formatTransactionAmount(transaction: DashboardTransactionRow): string {
@@ -783,7 +874,10 @@ function Home() {
         });
         setSelectedTemplateId(savedTemplate.id);
         setTemplateStatus("Template saved for future imports.");
-        await handlePrepareImport();
+        const prepared = await handlePrepareImport();
+        if (prepared) {
+          setImportStep("review");
+        }
       }
     } catch {
       setTemplateError("Could not save that template. Check required mappings and transform settings.");
@@ -792,30 +886,32 @@ function Home() {
     }
   }
 
-  async function handlePrepareImport() {
+  async function handlePrepareImport(): Promise<boolean> {
     setImportError(null);
     setImportStatus(null);
     setImportResult(null);
     if (!selectedFile) {
       setImportError("Choose a source CSV file before updating the transform preview.");
-      return;
+      return false;
     }
     if (activeAccountId === "") {
       setImportError("Choose the account receiving this import before updating the transform preview.");
-      return;
+      return false;
     }
     const missingField = missingMappingFields[0];
     if (missingField) {
       setImportError(`Map the required ${missingField} field before updating the transform preview.`);
-      return;
+      return false;
     }
     setImportLoading(true);
     try {
       const prepared = await prepareImport(selectedFile, activeAccountId, buildTemplateConfig());
       setPreparedImport(prepared);
       setImportStatus(`Transform preview updated for ${prepared.row_count} row(s). Review before confirming.`);
+      return true;
     } catch (error) {
       setImportError(apiErrorDetail(error) ?? "Could not update transform preview. Check account id, mappings, and transform settings.");
+      return false;
     } finally {
       setImportLoading(false);
     }
@@ -1236,13 +1332,92 @@ function Home() {
         )} />
         <Route path="/import" element={(
           <section className="upload-panel" aria-labelledby="upload-heading">
-        <h2 id="upload-heading">Import transactions in guided order</h2>
+            <div className="import-landing-header">
+              <div>
+                <h2 id="upload-heading">Imported files</h2>
+                <p>Review source uploads, then remove every transaction from a mistaken file in one step.</p>
+              </div>
+              <Link className="dashboard-review-link" to="/import/new" onClick={() => setImportStep("account")}>Upload transactions</Link>
+            </div>
+            {importUploadsError ? <p className="preview-error">{importUploadsError}</p> : null}
+            {importStatus ? <p className="template-status">{importStatus}</p> : null}
+            {importUploadsLoading ? (
+              <div className="import-empty" role="status">Loading imported files...</div>
+            ) : importUploads.length === 0 ? (
+              <div className="import-empty" role="status">
+                <h3>No imported files yet</h3>
+                <p>Uploaded files will appear here with account, transaction count, and imported date range.</p>
+                <Link className="dashboard-review-link" to="/import/new" onClick={() => setImportStep("account")}>Upload transactions</Link>
+              </div>
+            ) : (
+              <div className="table-wrap import-upload-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th scope="col">File</th>
+                      <th scope="col">Account</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Transactions</th>
+                      <th scope="col">Date range</th>
+                      <th scope="col">Uploaded</th>
+                      <th scope="col">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importUploads.map((upload) => (
+                      <tr key={upload.id} className={upload.status === "removed" ? "upload-row-removed" : undefined}>
+                        <td><strong>{upload.original_filename}</strong></td>
+                        <td>{upload.account_name ?? "No account"}</td>
+                        <td><span className="upload-status">{upload.status.replace("_", " ")}</span></td>
+                        <td>{upload.imported_transaction_count}</td>
+                        <td>{formatUploadDateRange(upload)}</td>
+                        <td>{formatDisplayDate(upload.created_at.slice(0, 10))}</td>
+                        <td>
+                          {confirmingDeleteUploadId === upload.id ? (
+                            <span className="inline-confirmation">
+                              <button type="button" className="danger-action" disabled={deletingUploadId === upload.id} onClick={() => handleDeleteImportUpload(upload)}>
+                                {deletingUploadId === upload.id ? "Removing..." : "Confirm remove"}
+                              </button>
+                              <button type="button" className="secondary-action" onClick={() => setConfirmingDeleteUploadId(null)}>Cancel</button>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="danger-action"
+                              disabled={upload.status === "removed" || upload.imported_transaction_count === 0}
+                              onClick={() => setConfirmingDeleteUploadId(upload.id)}
+                            >
+                              Remove transactions
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )} />
+        <Route path="/import/new" element={(
+          <section className="upload-panel" aria-labelledby="upload-flow-heading">
+        <div className="import-landing-header">
+          <div>
+            <h2 id="upload-flow-heading">Import transactions in guided order</h2>
+            <p>Move forward one focused step at a time. Use Back to review prior choices.</p>
+          </div>
+          <Link className="secondary-action" to="/import">Back to imported files</Link>
+        </div>
         <ol className="workflow-steps" aria-label="Import workflow order">
-          <li><strong>1. Account</strong><span>Choose where these transactions belong.</span></li>
-          <li><strong>2. Source file</strong><span>Select and preview the CSV rows.</span></li>
-          <li><strong>3. Mappings</strong><span>Choose or edit account template mappings.</span></li>
-          <li><strong>4. Review</strong><span>Prepare rows and check duplicate warnings.</span></li>
-          <li><strong>5. Confirm</strong><span>Import, then review the month on the dashboard.</span></li>
+          {IMPORT_STEPS.map((step, index) => {
+            const currentIndex = importStepIndex(importStep);
+            const state = index === currentIndex ? "current" : index < currentIndex ? "complete" : canVisitImportStep(step.id) ? "ready" : "blocked";
+            return (
+              <li key={step.id} data-step-state={state} aria-current={state === "current" ? "step" : undefined}>
+                <strong>{index + 1}. {step.label}</strong><span>{step.help}</span>
+              </li>
+            );
+          })}
         </ol>
         {!accountsLoaded ? (
           <div className="import-empty" role="status">Loading accounts...</div>
@@ -1253,92 +1428,72 @@ function Home() {
             <Link className="dashboard-review-link" to="/accounts">Go to accounts</Link>
           </div>
         ) : (
-          <>
-        <label className="import-account-step">
-          <span>Import account</span>
-          <select
-            aria-label="Import account"
-            value={activeAccountId}
-            onChange={(event) => {
-              setActiveAccountId(event.target.value ? Number(event.target.value) : "");
-              setSelectedFile(null);
-              setPreview(null);
-              setPreviewError(null);
-              setPreparedImport(null);
-              setImportResult(null);
-              setImportStatus(null);
-            }}
-          >
-            <option value="">Choose account</option>
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name}
-              </option>
-            ))}
-          </select>
-          <small>Templates shown below are tied to this account.</small>
-        </label>
-        {showUploadStep ? (
-        <form className="upload-form progressive-step" onSubmit={handlePreviewSubmit}>
-          <label className="file-picker">
-            <span>Statement CSV</span>
-            <input
-              accept=".csv,text/csv"
-              disabled={previewLoading}
-              type="file"
-              onChange={(event) => {
-                previewRequestId.current += 1;
-                setSelectedFile(event.target.files?.[0] ?? null);
-                setPreview(null);
-                setPreviewError(null);
-                setTemplateStatus(null);
-                setPreparedImport(null);
-                setImportResult(null);
-                setImportStatus(null);
-              }}
-            />
-          </label>
-          <button type="submit" disabled={previewLoading}>
-            {previewLoading ? "Uploading..." : "Upload"}
-          </button>
-        </form>
-        ) : null}
-        {previewError ? <p className="preview-error">{previewError}</p> : null}
-        {preview ? (
-          <div className="preview-results">
-            <section className="csv-preview" aria-labelledby="csv-preview-heading">
-              <div className="section-header-row">
-                <div>
-                  <h3 id="csv-preview-heading">CSV preview</h3>
-                  <p>Uploaded rows appear here before mappings or imports run.</p>
-                </div>
-                <span>{preview.rows.length} preview row(s)</span>
-              </div>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      {preview.headers.map((header) => (
-                        <th key={header} scope="col">
-                          {header}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {preview.rows.map((row, index) => (
-                      <tr key={index}>
-                        {preview.headers.map((header) => (
-                          <td key={header}>{row[header] ?? ""}</td>
-                        ))}
-                      </tr>
+          <div className="import-flow-step">
+            {previousImportStep() ? (
+              <button type="button" className="secondary-action import-back-button" onClick={() => goToImportStep(previousImportStep() ?? "account")}>Back</button>
+            ) : null}
+            {importStep === "account" ? (
+              <div className="import-account-step">
+                <label>
+                  <span>Import account</span>
+                  <select
+                    aria-label="Import account"
+                    value={activeAccountId}
+                    onChange={(event) => {
+                      setActiveAccountId(event.target.value ? Number(event.target.value) : "");
+                      setSelectedFile(null);
+                      setPreview(null);
+                      setPreviewError(null);
+                      setPreparedImport(null);
+                      setImportResult(null);
+                      setImportStatus(null);
+                    }}
+                  >
+                    <option value="">Choose account</option>
+                    {accounts.map((account) => (
+                      <option key={account.id} value={account.id}>{account.name}</option>
                     ))}
-                  </tbody>
-                </table>
+                  </select>
+                  <small>Templates shown later are tied to this account.</small>
+                </label>
+                <button type="button" disabled={activeAccountId === ""} onClick={() => setImportStep("source")}>Continue to source file</button>
               </div>
-            </section>
-            {showTemplateStep ? (
-            <form className="template-editor" onSubmit={handleTemplateSubmit}>
+            ) : null}
+            {importStep === "source" ? (
+              <div className="preview-results">
+                <form className="upload-form progressive-step" onSubmit={handlePreviewSubmit}>
+                  <label className="file-picker">
+                    <span>Statement CSV</span>
+                    <input
+                      accept=".csv,text/csv"
+                      disabled={previewLoading}
+                      type="file"
+                      onChange={(event) => {
+                        previewRequestId.current += 1;
+                        setSelectedFile(event.target.files?.[0] ?? null);
+                        setPreview(null);
+                        setPreviewError(null);
+                        setTemplateStatus(null);
+                        setPreparedImport(null);
+                        setImportResult(null);
+                        setImportStatus(null);
+                      }}
+                    />
+                  </label>
+                  <button type="submit" disabled={previewLoading}>{previewLoading ? "Uploading..." : "Upload"}</button>
+                </form>
+                {previewError ? <p className="preview-error">{previewError}</p> : null}
+                {preview ? (
+                  <section className="csv-preview" aria-labelledby="csv-preview-heading">
+                    <div className="section-header-row"><div><h3 id="csv-preview-heading">CSV preview</h3><p>Uploaded rows appear here before mappings or imports run.</p></div><span>{preview.rows.length} preview row(s)</span></div>
+                    <div className="table-wrap"><table><thead><tr>{preview.headers.map((header) => <th key={header} scope="col">{header}</th>)}</tr></thead><tbody>{preview.rows.map((row, index) => <tr key={index}>{preview.headers.map((header) => <td key={header}>{row[header] ?? ""}</td>)}</tr>)}</tbody></table></div>
+                  </section>
+                ) : null}
+                <div className="import-actions"><button type="button" disabled={!preview} onClick={() => setImportStep("mapping")}>Continue to mappings</button></div>
+              </div>
+            ) : null}
+            {importStep === "mapping" && preview ? (
+              <form className="template-editor" onSubmit={handleTemplateSubmit}>
               <div className="template-editor-header">
                 <div>
                   <h3>Import Template</h3>
@@ -1541,18 +1696,27 @@ function Home() {
                     {templateSaving ? "Saving..." : "Save Template"}
                   </button>
                 ) : null}
-                <button type="button" disabled={importLoading || importValidationItems.length > 0} onClick={handlePrepareImport}>
+                <button
+                  type="button"
+                  disabled={importLoading || importValidationItems.length > 0}
+                  onClick={async () => {
+                    const prepared = await handlePrepareImport();
+                    if (prepared) {
+                      setImportStep("review");
+                    }
+                  }}
+                >
                   {importLoading ? "Updating..." : "Update transform preview"}
                 </button>
               </div>
               {importError ? <p className="preview-error">{importError}</p> : null}
             </form>
             ) : null}
-            {showImportReview ? (
-            <div className="import-confirmation" aria-label="Import confirmation">
+            {importStep === "review" && preparedImport ? (
+            <div className="import-confirmation" aria-label="Transformed import review">
               <div>
                 <h3>Transformed Preview</h3>
-                <p>Normalized rows for {activeAccount?.name ?? "the selected account"}. Confirm only after dates, amounts, and directions look right.</p>
+                <p>Normalized rows for {activeAccount?.name ?? "the selected account"}. Review dates, amounts, and directions before confirming.</p>
               </div>
               {importValidationItems.length > 0 ? (
                 <div className="import-validation" aria-label="Import requirements">
@@ -1564,6 +1728,37 @@ function Home() {
                   </ul>
                 </div>
               ) : null}
+              {importStatus ? <p className="template-status">{importStatus}</p> : null}
+              {preparedImport.duplicate_candidates.length ? (
+                <p className="preview-error">{preparedImport.duplicate_candidates.length} duplicate candidate(s) found before import.</p>
+              ) : null}
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      {Object.keys(preparedImport.transformed_preview[0] ?? {}).map((header) => (
+                        <th key={header} scope="col">{header}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preparedImport.transformed_preview.map((row, index) => (
+                      <tr key={index}>{Object.keys(preparedImport.transformed_preview[0] ?? {}).map((header) => <td key={header}>{row[header] ?? ""}</td>)}</tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="import-actions">
+                <button type="button" onClick={() => setImportStep("confirm")}>Continue to confirm</button>
+              </div>
+            </div>
+            ) : null}
+            {importStep === "confirm" && preparedImport ? (
+            <div className="import-confirmation" aria-label="Import confirmation">
+              <div>
+                <h3>Confirm import</h3>
+                <p>Import {preparedImport.row_count} row(s) from {selectedFile?.name ?? "the selected CSV"} into {activeAccount?.name ?? "the selected account"}.</p>
+              </div>
               <div className="import-actions">
                 <button
                   type="button"
@@ -1583,6 +1778,7 @@ function Home() {
                           : "Duplicate warning found; no transactions inserted.",
                       );
                       refreshDashboard();
+                      refreshImportUploads();
                     } catch {
                       setImportError("Could not confirm import. Review duplicate warnings and mappings.");
                     } finally {
@@ -1613,41 +1809,9 @@ function Home() {
               {importResult?.duplicate_candidates.length ? (
                 <p className="preview-error">{importResult.duplicate_candidates.length} duplicate candidate(s) blocked insert.</p>
               ) : null}
-              {preparedImport ? (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        {Object.keys(preparedImport.transformed_preview[0] ?? {}).map((header) => (
-                          <th key={header} scope="col">
-                            {header}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {preparedImport.transformed_preview.map((row, index) => (
-                        <tr key={index}>
-                          {Object.keys(preparedImport.transformed_preview[0] ?? {}).map((header) => (
-                            <td key={header}>{row[header] ?? ""}</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
             </div>
             ) : null}
-            {!showImportReview ? (
-              <div className="import-next-step" role="status">
-                <strong>Next: update transform preview</strong>
-                <span>That step validates mappings, checks duplicate candidates, and creates the upload id needed for confirm.</span>
-              </div>
-            ) : null}
           </div>
-        ) : null}
-        </>
         )}
       </section>
         )} />

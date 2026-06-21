@@ -102,6 +102,25 @@ export type ConfirmImportResponse = {
   duplicate_candidates: DuplicateCandidate[];
 };
 
+export type ImportUploadSummary = {
+  id: number;
+  original_filename: string;
+  account_id: number | null;
+  account_name: string | null;
+  status: string;
+  row_count: number;
+  imported_transaction_count: number;
+  min_transaction_date: string | null;
+  max_transaction_date: string | null;
+  created_at: string;
+};
+
+export type ImportUploadDeleteResponse = {
+  upload_file_id: number;
+  deleted_transaction_count: number;
+  status: string;
+};
+
 export type TransactionLabel = {
   id: number;
   slug: string;
@@ -263,6 +282,16 @@ export async function confirmImport(
     template_config: templateConfig,
     allow_duplicates: allowDuplicates,
   });
+  return response.data;
+}
+
+export async function listImportUploads(): Promise<ImportUploadSummary[]> {
+  const response = await api.get<ImportUploadSummary[]>("/imports/uploads");
+  return response.data;
+}
+
+export async function deleteImportUpload(uploadFileId: number): Promise<ImportUploadDeleteResponse> {
+  const response = await api.delete<ImportUploadDeleteResponse>(`/imports/uploads/${uploadFileId}`);
   return response.data;
 }
 
