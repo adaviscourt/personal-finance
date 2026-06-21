@@ -66,6 +66,7 @@ type MappingDraft = Record<RequiredMappingField | OptionalSplitField, string>;
 type TransformDraft = Record<(typeof REQUIRED_FIELDS)[number], TemplateTransform>;
 type AmountMode = "single" | "split";
 type ImportStep = "account" | "source" | "mapping" | "review" | "confirm";
+type MappingMode = "list" | "new";
 type DashboardSortKey = "date" | "account" | "description" | "label" | "direction" | "amount";
 type SortDirection = "asc" | "desc";
 type DashboardNetPoint = { month: string; amount: number };
@@ -209,6 +210,7 @@ function Home() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [templates, setTemplates] = useState<ImportTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | "new">("new");
+  const [mappingMode, setMappingMode] = useState<MappingMode>("list");
   const [templateName, setTemplateName] = useState("");
   const [mappingDraft, setMappingDraft] = useState<MappingDraft>(createEmptyMappings);
   const [transformDraft, setTransformDraft] = useState<TransformDraft>(createDefaultTransforms);
@@ -278,10 +280,12 @@ function Home() {
     if (activeAccountId === "") {
       templateRequestId.current += 1;
       setTemplates([]);
+      setMappingMode("list");
       return;
     }
 
     setSelectedTemplateId("new");
+    setMappingMode("list");
       setTemplateName("");
       setMappingDraft(createEmptyMappings());
       setTransformDraft(createDefaultTransforms());
@@ -499,7 +503,7 @@ function Home() {
         : `${dashboardLabelSlugs.length} selected`;
   const activeAccount = activeAccountId === "" ? null : accounts.find((account) => account.id === activeAccountId) ?? null;
   const hasPreview = Boolean(preview);
-  const showMappingStep = hasPreview && selectedTemplateId === "new";
+  const showMappingStep = hasPreview && mappingMode === "new";
   const selectedTemplate = selectedTemplateId === "new" ? null : templates.find((template) => template.id === selectedTemplateId) ?? null;
   const selectedDescriptionParts = descriptionParts.filter((part) => part.trim());
   const missingMappingFields = [
@@ -840,6 +844,7 @@ function Home() {
 
   function startNewTemplate() {
     setSelectedTemplateId("new");
+    setMappingMode("new");
     setTemplateName("");
     setMappingDraft(createEmptyMappings());
     setTransformDraft(createDefaultTransforms());
@@ -850,6 +855,37 @@ function Home() {
     setPreparedImport(null);
     setImportResult(null);
     setImportStatus(null);
+  }
+
+  async function handleTemplateChoice(template: ImportTemplate) {
+    setSelectedTemplateId(template.id);
+    setMappingMode("list");
+    setTemplateStatus(null);
+    setTemplateError(null);
+    setPreparedImport(null);
+    setImportResult(null);
+    setImportStatus(null);
+    applyTemplateToDraft(template);
+    if (!selectedFile) {
+      setImportError("Choose a source CSV file before updating the transform preview.");
+      return;
+    }
+    if (activeAccountId === "") {
+      setImportError("Choose the account receiving this import before updating the transform preview.");
+      return;
+    }
+    setImportError(null);
+    setImportLoading(true);
+    try {
+      const prepared = await prepareImport(selectedFile, activeAccountId, template.config);
+      setPreparedImport(prepared);
+      setImportStatus(`Transform preview updated for ${prepared.row_count} row(s). Review before confirming.`);
+      setImportStep("review");
+    } catch (error) {
+      setImportError(apiErrorDetail(error) ?? "Could not update transform preview. Check account id, mappings, and transform settings.");
+    } finally {
+      setImportLoading(false);
+    }
   }
 
   function buildTemplateConfig(): ImportTemplateConfig {
@@ -922,6 +958,7 @@ function Home() {
           return [...withoutSaved, savedTemplate].sort((first, second) => first.name.localeCompare(second.name));
         });
         setSelectedTemplateId(savedTemplate.id);
+        setMappingMode("list");
         setTemplateStatus("Template saved for future imports.");
         const prepared = await handlePrepareImport();
         if (prepared) {
@@ -1487,10 +1524,11 @@ function Home() {
                     value={activeAccountId}
                     onChange={(event) => {
                       setActiveAccountId(event.target.value ? Number(event.target.value) : "");
-                      setSelectedFile(null);
-                      setPreview(null);
-                      setPreviewError(null);
-                      setPreparedImport(null);
+                        setSelectedFile(null);
+                        setPreview(null);
+                        setPreviewError(null);
+                        setMappingMode("list");
+                        setPreparedImport(null);
                       setImportResult(null);
                       setImportStatus(null);
                     }}
@@ -1518,6 +1556,7 @@ function Home() {
                         setSelectedFile(event.target.files?.[0] ?? null);
                         setPreview(null);
                         setPreviewError(null);
+                        setMappingMode("list");
                         setTemplateStatus(null);
                         setPreparedImport(null);
                         setImportResult(null);
@@ -1545,7 +1584,7 @@ function Home() {
                 </div>
                 <button type="button" className="secondary-action" onClick={startNewTemplate}>+ New template</button>
               </div>
-              <div className="template-choice-list" aria-label="Import templates">
+              {!showMappingStep ? <div className="template-choice-list" aria-label="Import templates">
                 {templates.length > 0 ? templates.map((template) => {
                   const isSelected = selectedTemplateId === template.id;
                   return (
@@ -1553,15 +1592,8 @@ function Home() {
                       key={template.id}
                       type="button"
                       aria-pressed={isSelected}
-                      onClick={() => {
-                        setSelectedTemplateId(template.id);
-                        setTemplateStatus(null);
-                        setTemplateError(null);
-                        setPreparedImport(null);
-                        setImportResult(null);
-                        setImportStatus(null);
-                        applyTemplateToDraft(template);
-                      }}
+                      disabled={importLoading}
+                      onClick={() => void handleTemplateChoice(template)}
                     >
                       <strong>{template.name}</strong>
                       <span>{isSelected ? "Selected" : "Use this template"}</span>
@@ -1570,8 +1602,8 @@ function Home() {
                 }) : (
                   <p>No templates saved for {activeAccount?.name ?? "this account"} yet.</p>
                 )}
-              </div>
-              {selectedTemplate ? (
+              </div> : null}
+              {!showMappingStep && selectedTemplate ? (
                 <div className="selected-template-summary">
                   <strong>{selectedTemplate.name}</strong>
                   <span>Template ready. Use next to review normalized rows before import.</span>

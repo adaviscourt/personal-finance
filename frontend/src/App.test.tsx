@@ -524,6 +524,8 @@ describe("App", () => {
     continueToMappings();
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Template name")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ New template" }));
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Checking export" } });
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
@@ -581,6 +583,7 @@ describe("App", () => {
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
     continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ New template" }));
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Checking export" } });
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
@@ -628,6 +631,7 @@ describe("App", () => {
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
     continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ New template" }));
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Split checking" } });
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
@@ -682,6 +686,7 @@ describe("App", () => {
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
     continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ New template" }));
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Composed description" } });
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
@@ -744,7 +749,6 @@ describe("App", () => {
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Account export/ }));
-    continueToReview();
 
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
     expect(screen.queryByLabelText("Template name")).not.toBeInTheDocument();
@@ -794,10 +798,6 @@ describe("App", () => {
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Checking/ }));
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Next: review" })).not.toBeDisabled();
-    });
-    continueToReview();
 
     await waitFor(() => {
       expect(mockedPrepareImport).toHaveBeenCalled();
@@ -849,7 +849,6 @@ describe("App", () => {
     continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Checking/ }));
-    continueToReview();
 
     expect(await screen.findByText("Row 1 missing required field: amount")).toBeInTheDocument();
   });
@@ -995,6 +994,7 @@ describe("App", () => {
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
     continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ New template" }));
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
     fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
@@ -1037,6 +1037,7 @@ describe("App", () => {
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
     continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ New template" }));
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
     fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
@@ -1084,6 +1085,7 @@ describe("App", () => {
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
     continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ New template" }));
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
     fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
