@@ -1003,6 +1003,7 @@ describe("App", () => {
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
     expect(screen.getAllByText("debit").length).toBeGreaterThan(0);
     continueToConfirm();
+    expect(screen.queryByText("Transform preview updated for 1 row(s). Review before confirming.")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
 
     expect(await screen.findByText("Imported 1 transaction(s).")).toBeInTheDocument();

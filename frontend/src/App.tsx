@@ -1847,7 +1847,7 @@ function Home() {
                   {importLoading ? "Confirming..." : "Confirm Import"}
                 </button>
               </div>
-              {importStatus ? <p className="template-status">{importStatus}</p> : null}
+              {importResult && importStatus ? <p className="template-status">{importStatus}</p> : null}
               {importResult && importResult.inserted_count > 0 ? (
                 <Link
                   className="dashboard-review-link"
