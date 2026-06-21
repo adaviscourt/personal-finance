@@ -401,18 +401,31 @@ summary:focus-visible {
 }
 
 .step-arrow {
-  display: inline-grid;
+  position: relative;
+  display: inline-flex;
   width: 44px;
   height: 40px;
-  place-items: center;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   background: var(--surface-panel);
-  color: var(--blue-dark);
+  color: transparent;
   font-size: 1.35rem;
   font-weight: 900;
   line-height: 1;
   transition: background-color 180ms ease-out, border-color 180ms ease-out, color 180ms ease-out, box-shadow 180ms ease-out;
+}
+
+.step-arrow::before {
+  content: "←";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--blue-dark);
+  line-height: 1;
 }
 
 .step-arrow:hover:not(:disabled) {
@@ -422,8 +435,12 @@ summary:focus-visible {
 
 .step-arrow-next {
   background: var(--brand);
-  color: white;
   box-shadow: 0 6px 14px oklch(42% 0.16 263 / 0.18);
+}
+
+.step-arrow-next::before {
+  content: "→";
+  color: white;
 }
 
 .step-arrow-next:hover:not(:disabled) {
@@ -435,8 +452,11 @@ summary:focus-visible {
   cursor: not-allowed;
   border-color: var(--border);
   background: var(--surface-panel);
-  color: var(--muted);
   box-shadow: none;
+}
+
+.step-arrow:disabled::before {
+  color: var(--muted);
 }
 
 .upload-form,
@@ -1331,13 +1351,18 @@ button,
 
 .description-part-actions button,
 .secondary-action {
+  display: inline-flex;
   min-height: 36px;
+  align-items: center;
+  justify-content: center;
   padding: 0 11px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-panel);
   color: var(--blue-dark);
   font-weight: 850;
+  line-height: 1;
+  text-decoration: none;
 }
 
 .description-part-actions button:hover,
