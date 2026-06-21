@@ -92,7 +92,19 @@ function renderApp(route = "/") {
 }
 
 async function continueToSourceFile() {
-  fireEvent.click(await screen.findByRole("button", { name: "Continue to source file" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Next: source" }));
+}
+
+function continueToMappings() {
+  fireEvent.click(screen.getByRole("button", { name: "Next: mapping" }));
+}
+
+function continueToReview() {
+  fireEvent.click(screen.getByRole("button", { name: "Next: review" }));
+}
+
+function continueToConfirm() {
+  fireEvent.click(screen.getByRole("button", { name: "Next: confirm" }));
 }
 
 describe("App", () => {
@@ -242,7 +254,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continue to mappings" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Next: mapping" })).toBeEnabled();
   });
 
   it("sends users to accounts before import when no accounts exist", async () => {
@@ -509,7 +521,7 @@ describe("App", () => {
     fireEvent.change(await screen.findByLabelText("Statement CSV"), { target: { files: [file] } });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to mappings" }));
+    continueToMappings();
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Checking export" } });
@@ -567,7 +579,7 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to mappings" }));
+    continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Checking export" } });
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
@@ -614,7 +626,7 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to mappings" }));
+    continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Split checking" } });
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
@@ -668,7 +680,7 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to mappings" }));
+    continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Composed description" } });
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
@@ -728,11 +740,11 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to mappings" }));
+    continueToMappings();
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Template"), { target: { value: "7" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
+    continueToReview();
 
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
     expect(screen.queryByLabelText("Template name")).not.toBeInTheDocument();
@@ -778,15 +790,14 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to mappings" }));
+    continueToMappings();
 
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Template"), { target: { value: "8" } });
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Update transform preview" })).not.toBeDisabled();
+      expect(screen.getByRole("button", { name: "Next: review" })).not.toBeDisabled();
     });
-    const updateButton = screen.getByRole("button", { name: "Update transform preview" });
-    fireEvent.click(updateButton);
+    continueToReview();
 
     await waitFor(() => {
       expect(mockedPrepareImport).toHaveBeenCalled();
@@ -835,10 +846,10 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to mappings" }));
+    continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Template"), { target: { value: "8" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
+    continueToReview();
 
     expect(await screen.findByText("Row 1 missing required field: amount")).toBeInTheDocument();
   });
@@ -982,16 +993,16 @@ describe("App", () => {
     fireEvent.change(await screen.findByLabelText("Statement CSV"), { target: { files: [file] } });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to mappings" }));
+    continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
     fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
+    continueToReview();
 
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
     expect(screen.getAllByText("debit").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Continue to confirm" }));
+    continueToConfirm();
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
 
     expect(await screen.findByText("Imported 1 transaction(s).")).toBeInTheDocument();
@@ -1024,14 +1035,14 @@ describe("App", () => {
     fireEvent.change(await screen.findByLabelText("Statement CSV"), { target: { files: [file] } });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to mappings" }));
+    continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
     fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
+    continueToReview();
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to confirm" }));
+    continueToConfirm();
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
 
     const reviewLink = await screen.findByRole("link", { name: "Review March 2026 imports on dashboard" });
@@ -1071,14 +1082,14 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     expect(await screen.findByText("CSV preview")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to mappings" }));
+    continueToMappings();
     expect(await screen.findByText("Import Template")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Date source column"), { target: { value: "Date" } });
     fireEvent.change(screen.getByLabelText("Description source column 1"), { target: { value: "Description" } });
     fireEvent.change(screen.getByLabelText("Amount source column"), { target: { value: "Amount" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update transform preview" }));
+    continueToReview();
     expect(await screen.findByText("Transform preview updated for 1 row(s). Review before confirming.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to confirm" }));
+    continueToConfirm();
     fireEvent.click(screen.getByRole("button", { name: "Confirm Import" }));
 
     expect(await screen.findByText("Duplicate warning found; no transactions inserted.")).toBeInTheDocument();

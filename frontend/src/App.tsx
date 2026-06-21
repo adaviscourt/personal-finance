@@ -626,6 +626,41 @@ function Home() {
     return index > 0 ? IMPORT_STEPS[index - 1].id : null;
   }
 
+  function nextImportStep(): ImportStep | null {
+    const index = importStepIndex(importStep);
+    return index >= 0 && index < IMPORT_STEPS.length - 1 ? IMPORT_STEPS[index + 1].id : null;
+  }
+
+  async function handleImportStepNext() {
+    if (importStep === "mapping") {
+      const prepared = await handlePrepareImport();
+      if (prepared) {
+        setImportStep("review");
+      }
+      return;
+    }
+    const nextStep = nextImportStep();
+    if (nextStep) {
+      goToImportStep(nextStep);
+    }
+  }
+
+  function canGoToNextImportStep(): boolean {
+    if (importStep === "account") {
+      return activeAccountId !== "";
+    }
+    if (importStep === "source") {
+      return Boolean(preview);
+    }
+    if (importStep === "mapping") {
+      return importValidationItems.length === 0 && !importLoading;
+    }
+    if (importStep === "review") {
+      return Boolean(preparedImport);
+    }
+    return false;
+  }
+
   function formatTransactionAmount(transaction: DashboardTransactionRow): string {
     const amount = Number(transaction.amount);
     const sign = transaction.direction === "credit" ? "+" : "-";
@@ -1429,9 +1464,6 @@ function Home() {
           </div>
         ) : (
           <div className="import-flow-step">
-            {previousImportStep() ? (
-              <button type="button" className="secondary-action import-back-button" onClick={() => goToImportStep(previousImportStep() ?? "account")}>Back</button>
-            ) : null}
             {importStep === "account" ? (
               <div className="import-account-step">
                 <label>
@@ -1456,7 +1488,6 @@ function Home() {
                   </select>
                   <small>Templates shown later are tied to this account.</small>
                 </label>
-                <button type="button" disabled={activeAccountId === ""} onClick={() => setImportStep("source")}>Continue to source file</button>
               </div>
             ) : null}
             {importStep === "source" ? (
@@ -1489,7 +1520,6 @@ function Home() {
                     <div className="table-wrap"><table><thead><tr>{preview.headers.map((header) => <th key={header} scope="col">{header}</th>)}</tr></thead><tbody>{preview.rows.map((row, index) => <tr key={index}>{preview.headers.map((header) => <td key={header}>{row[header] ?? ""}</td>)}</tr>)}</tbody></table></div>
                   </section>
                 ) : null}
-                <div className="import-actions"><button type="button" disabled={!preview} onClick={() => setImportStep("mapping")}>Continue to mappings</button></div>
               </div>
             ) : null}
             {importStep === "mapping" && preview ? (
@@ -1537,7 +1567,7 @@ function Home() {
               {selectedTemplate ? (
                 <div className="selected-template-summary">
                   <strong>{selectedTemplate.name}</strong>
-                  <span>Template ready. Update transform preview to inspect normalized rows before import.</span>
+                  <span>Template ready. Use next to review normalized rows before import.</span>
                 </div>
               ) : null}
               {showMappingStep ? (
@@ -1696,18 +1726,6 @@ function Home() {
                     {templateSaving ? "Saving..." : "Save Template"}
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  disabled={importLoading || importValidationItems.length > 0}
-                  onClick={async () => {
-                    const prepared = await handlePrepareImport();
-                    if (prepared) {
-                      setImportStep("review");
-                    }
-                  }}
-                >
-                  {importLoading ? "Updating..." : "Update transform preview"}
-                </button>
               </div>
               {importError ? <p className="preview-error">{importError}</p> : null}
             </form>
@@ -1747,9 +1765,6 @@ function Home() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-              <div className="import-actions">
-                <button type="button" onClick={() => setImportStep("confirm")}>Continue to confirm</button>
               </div>
             </div>
             ) : null}
@@ -1811,6 +1826,29 @@ function Home() {
               ) : null}
             </div>
             ) : null}
+            <div className="import-step-nav" aria-label="Import step navigation">
+              {previousImportStep() ? (
+                <button
+                  type="button"
+                  className="step-arrow step-arrow-back"
+                  aria-label="Back"
+                  onClick={() => goToImportStep(previousImportStep() ?? "account")}
+                >
+                  ←
+                </button>
+              ) : <span />}
+              {nextImportStep() ? (
+                <button
+                  type="button"
+                  className="step-arrow step-arrow-next"
+                  aria-label={importStep === "mapping" ? "Next: review" : `Next: ${nextImportStep()}`}
+                  disabled={!canGoToNextImportStep()}
+                  onClick={handleImportStepNext}
+                >
+                  {importStep === "mapping" && importLoading ? "..." : "→"}
+                </button>
+              ) : null}
+            </div>
           </div>
         )}
       </section>
