@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  .opencode/scripts/openspec-watch-pr-feedback.sh [--once] [--interval seconds]
+
+Polls open PRs labeled agent-feedback-ready. If unprocessed comments or review
+comments contain @opencode, spawns a feedback worker for the same PR branch.
+
+Environment:
+  STATE_DIR         Optional state/log dir. Defaults to ~/.opencode/state/<repo-name>.
+  PR_LABEL          Optional watch label. Defaults to agent-feedback-ready.
+  WORKER            Optional worker script path.
+  DEBOUNCE_SECONDS  Optional quiet period before processing. Defaults to 300.
+USAGE
+}
+
+ONCE=0
+INTERVAL=60
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --once)
+      ONCE=1
+      shift
+      ;;
+    --interval)
+      INTERVAL="${2:-}"
+      if [[ -z "$INTERVAL" ]]; then
+        usage
+        exit 1
+      fi
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+for cmd in gh git jq opencode; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "$cmd is required and was not found." >&2
+    exit 1
+  fi
+done
+
+if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
+  echo "Must be run inside a git repository." >&2
+  exit 1
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+REPO_NAME="$(basename "$REPO_ROOT")"
+STATE_DIR="${STATE_DIR:-$HOME/.opencode/state/$REPO_NAME}"
+LOCK_DIR="$STATE_DIR/openspec-feedback-watch.lock.d"
+LOG_FILE="$STATE_DIR/openspec-feedback-watch.log"
+PR_LABEL="${PR_LABEL:-agent-feedback-ready}"
+WORKER="${WORKER:-$REPO_ROOT/.opencode/scripts/openspec-pr-feedback-worker.sh}"
+DEBOUNCE_SECONDS="${DEBOUNCE_SECONDS:-300}"
+mkdir -p "$STATE_DIR"
+
+iso_to_epoch() {
+  date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$1" +%s 2>/dev/null \
+    || date -u -d "$1" +%s 2>/dev/null \
+    || echo 0
+}
+
+has_unprocessed_feedback() {
+  local pr_number="$1" processed_file="$STATE_DIR/pr-${pr_number}-opencode-feedback-processed.txt"
+  touch "$processed_file"
+  local processed_json current_user issue_json inline_json reviews_json newest_ts count
+  processed_json="$(jq -R -s 'split("\n") | map(select(length > 0))' "$processed_file")"
+  current_user="$(gh api user --jq '.login')"
+  issue_json="$(gh api "repos/:owner/:repo/issues/${pr_number}/comments?per_page=100" 2>/dev/null || printf '[]')"
+  inline_json="$(gh api "repos/:owner/:repo/pulls/${pr_number}/comments?per_page=100" 2>/dev/null || printf '[]')"
+  reviews_json="$(gh api "repos/:owner/:repo/pulls/${pr_number}/reviews?per_page=100" 2>/dev/null || printf '[]')"
+
+  count="$(
+    {
+      jq -r --argjson done "$processed_json" --arg me "$current_user" '.[] | select(.body | contains("@opencode")) | select(.user.login != $me) | "issue-comment:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$issue_json"
+      jq -r --argjson done "$processed_json" --arg me "$current_user" '.[] | select(.body | contains("@opencode")) | select(.user.login != $me) | "inline-comment:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$inline_json"
+      jq -r --argjson done "$processed_json" --arg me "$current_user" '.[] | select((.body // "") | contains("@opencode")) | select(.user.login != $me) | "review:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$reviews_json"
+    } | sed '/^$/d' | wc -l | tr -d ' '
+  )"
+  [[ "$count" -gt 0 ]] || return 1
+
+  newest_ts="$(
+    {
+      jq -r --argjson done "$processed_json" --arg me "$current_user" '.[] | select(.body | contains("@opencode")) | select(.user.login != $me) | "issue-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | .created_at' <<< "$issue_json"
+      jq -r --argjson done "$processed_json" --arg me "$current_user" '.[] | select(.body | contains("@opencode")) | select(.user.login != $me) | "inline-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | .created_at' <<< "$inline_json"
+      jq -r --argjson done "$processed_json" --arg me "$current_user" '.[] | select((.body // "") | contains("@opencode")) | select(.user.login != $me) | "review:" + (.id|tostring) as $key | select(($done | index($key)) | not) | .submitted_at' <<< "$reviews_json"
+    } | sort -r | head -n 1
+  )"
+  [[ -n "$newest_ts" ]] || return 1
+
+  local now_epoch newest_epoch
+  now_epoch="$(date +%s)"
+  newest_epoch="$(iso_to_epoch "$newest_ts")"
+  if (( now_epoch - newest_epoch < DEBOUNCE_SECONDS )); then
+    printf '[%s] PR #%s: feedback debouncing (%ss old)\n' "$(date)" "$pr_number" "$((now_epoch - newest_epoch))" >> "$LOG_FILE"
+    return 1
+  fi
+  return 0
+}
+
+tick() {
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    local lock_pid
+    lock_pid="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
+    if [[ -z "$lock_pid" ]] || ! kill -0 "$lock_pid" 2>/dev/null; then
+      printf '[%s] clearing stale feedback watcher lock%s\n' "$(date)" "${lock_pid:+ from pid $lock_pid}" >> "$LOG_FILE"
+      rm -rf "$LOCK_DIR"
+      mkdir "$LOCK_DIR" 2>/dev/null || return 0
+    else
+      printf '[%s] feedback watcher already running, skipping\n' "$(date)" >> "$LOG_FILE"
+      return 0
+    fi
+  fi
+  printf '%s\n' "$$" > "$LOCK_DIR/pid"
+  trap 'rm -rf "$LOCK_DIR" 2>/dev/null' RETURN
+
+  local use_osascript prs
+  use_osascript=0
+  if command -v osascript >/dev/null 2>&1 && /usr/bin/osascript -e 'id of application "iTerm2"' >/dev/null 2>&1; then
+    use_osascript=1
+    if ! /usr/bin/osascript -e 'tell application "iTerm2" to if (count of windows) is 0 then create window with default profile' >> "$LOG_FILE" 2>&1; then
+      printf '[%s] iTerm unavailable; running workers in background\n' "$(date)" >> "$LOG_FILE"
+      use_osascript=0
+    fi
+  fi
+
+  cd "$REPO_ROOT"
+  gh label create "$PR_LABEL" --description "PR feedback may be handled by opencode" --color D4C5F9 >/dev/null 2>&1 || true
+
+  prs="$(gh pr list \
+    --label "$PR_LABEL" \
+    --state open \
+    --json number,title,labels \
+    --jq '.[] | select(([.labels[].name] | index("openspec-implementing")) | not) | "\(.number)|\(.title)"')"
+
+  if [[ -z "$prs" ]]; then
+    return 0
+  fi
+
+  while IFS='|' read -r pr_number pr_title; do
+    [[ -z "$pr_number" ]] && continue
+    local pr_lock="$STATE_DIR/pr-${pr_number}-feedback.lock.d"
+    [[ -d "$pr_lock" ]] && continue
+    has_unprocessed_feedback "$pr_number" || continue
+    mkdir "$pr_lock" 2>/dev/null || continue
+
+    printf '[%s] feedback dispatch PR #%s: %s\n' "$(date)" "$pr_number" "$pr_title" >> "$LOG_FILE"
+
+    if [[ "$use_osascript" -eq 1 ]]; then
+      /usr/bin/osascript >> "$LOG_FILE" 2>&1 <<OSA || {
+tell application "iTerm2"
+  tell current window
+    create tab with default profile
+    tell current session
+      set name to "openspec-feedback-${pr_number}"
+      write text "cd \"$REPO_ROOT\" && trap 'rmdir \"$pr_lock\" 2>/dev/null || true' EXIT && \"$WORKER\" $pr_number"
+    end tell
+  end tell
+end tell
+OSA
+        printf '[%s] iTerm spawn failed for PR #%s; running worker in background\n' "$(date)" "$pr_number" >> "$LOG_FILE"
+        (cd "$REPO_ROOT" && trap 'rmdir "$pr_lock" 2>/dev/null || true' EXIT && "$WORKER" "$pr_number" >> "$LOG_FILE" 2>&1 &)
+      }
+    else
+      (cd "$REPO_ROOT" && trap 'rmdir "$pr_lock" 2>/dev/null || true' EXIT && "$WORKER" "$pr_number" >> "$LOG_FILE" 2>&1 &)
+    fi
+  done <<< "$prs"
+}
+
+while true; do
+  tick
+  if [[ "$ONCE" -eq 1 ]]; then
+    exit 0
+  fi
+  sleep "$INTERVAL"
+done
