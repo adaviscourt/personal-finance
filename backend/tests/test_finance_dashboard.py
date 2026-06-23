@@ -266,3 +266,45 @@ def test_dashboard_transaction_list_filters_uncategorized_by_label_id() -> None:
 
     assert response.status_code == 200
     assert [transaction["description"] for transaction in response.json()["transactions"]] == ["No label"]
+
+
+def test_dashboard_transaction_list_filters_controllable_rows() -> None:
+    month = "2099-01"
+    reset_month(month)
+    account = create_account(f"Dashboard controllable tx {uuid4()}")
+    add_transaction(account.id or 0, "2099-01-01", "Market", "10.00", "debit", "groceries")
+    add_transaction(account.id or 0, "2099-01-02", "Mortgage", "900.00", "debit", "housing")
+    add_transaction(account.id or 0, "2099-01-03", "No label", "1.00", "debit", None)
+
+    response = TestClient(app).get(f"/dashboard/transactions?month={month}&controllability=controllable")
+
+    assert response.status_code == 200
+    assert [transaction["description"] for transaction in response.json()["transactions"]] == ["Market", "No label"]
+
+
+def test_dashboard_transaction_list_filters_non_controllable_rows() -> None:
+    month = "2099-02"
+    reset_month(month)
+    account = create_account(f"Dashboard non-controllable tx {uuid4()}")
+    add_transaction(account.id or 0, "2099-02-01", "Market", "10.00", "debit", "groceries")
+    add_transaction(account.id or 0, "2099-02-02", "Mortgage", "900.00", "debit", "housing")
+    add_transaction(account.id or 0, "2099-02-03", "Paycheck", "1000.00", "credit", "paychecks")
+
+    response = TestClient(app).get(f"/dashboard/transactions?month={month}&controllability=non-controllable")
+
+    assert response.status_code == 200
+    assert [transaction["description"] for transaction in response.json()["transactions"]] == ["Mortgage", "Paycheck"]
+
+
+def test_dashboard_transaction_list_both_controllability_keeps_all_display_labels() -> None:
+    month = "2099-03"
+    reset_month(month)
+    account = create_account(f"Dashboard both controllability tx {uuid4()}")
+    add_transaction(account.id or 0, "2099-03-01", "Market", "10.00", "debit", "groceries")
+    add_transaction(account.id or 0, "2099-03-02", "Mortgage", "900.00", "debit", "housing")
+    add_transaction(account.id or 0, "2099-03-03", "No label", "1.00", "debit", None)
+
+    response = TestClient(app).get(f"/dashboard/transactions?month={month}&controllability=both")
+
+    assert response.status_code == 200
+    assert [transaction["description"] for transaction in response.json()["transactions"]] == ["Market", "Mortgage", "No label"]

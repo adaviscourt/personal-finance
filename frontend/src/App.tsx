@@ -27,6 +27,7 @@ import {
   type Account,
   type ConfirmImportResponse,
   type CsvPreviewResponse,
+  type DashboardControllabilityFilter,
   type DashboardSpendingLabel,
   type DashboardTransactionRow,
   type ImportPrepareResponse,
@@ -45,6 +46,8 @@ const OPTIONAL_SPLIT_FIELDS = ["debit", "credit"] as const;
 const DASHBOARD_MONTH_STORAGE_KEY = "personal-finance.dashboardMonth";
 const DASHBOARD_ACCOUNT_IDS_STORAGE_KEY = "personal-finance.dashboardAccountIds";
 const DASHBOARD_LABEL_SLUG_STORAGE_KEY = "personal-finance.dashboardLabelSlug";
+const DASHBOARD_CONTROLLABILITY_STORAGE_KEY = "personal-finance.dashboardControllability";
+const DASHBOARD_SHOW_HIDDEN_LABEL_ROWS_STORAGE_KEY = "personal-finance.dashboardShowHiddenLabelRows";
 const DEFAULT_TRANSFORMS: Record<(typeof REQUIRED_FIELDS)[number], TemplateTransform> = {
   date: "parse_date",
   description: "copy_column",
@@ -70,6 +73,7 @@ type MappingMode = "list" | "new";
 type DashboardSortKey = "date" | "account" | "description" | "label" | "direction" | "amount";
 type SortDirection = "asc" | "desc";
 type DashboardNetPoint = { month: string; amount: number };
+type DashboardTableRow = DashboardTransactionRow & { isHiddenByLabel: boolean };
 
 const DASHBOARD_SORT_LABELS: Record<DashboardSortKey, string> = {
   date: "Date",
@@ -114,20 +118,38 @@ function readStoredDashboardAccountIds(): number[] {
   }
 }
 
-function readStoredDashboardLabelSlugs(): string[] {
+function readStoredDashboardLabelSlugs(): string[] | null {
   let storedSlug = "";
   try {
     storedSlug = window.localStorage?.getItem?.(DASHBOARD_LABEL_SLUG_STORAGE_KEY) ?? "";
     if (!storedSlug) {
-      return [];
+      return null;
     }
     const parsedSlugs: unknown = JSON.parse(storedSlug);
     if (Array.isArray(parsedSlugs)) {
-      return parsedSlugs.filter((slug): slug is string => typeof slug === "string" && slug.length > 0);
+      const slugs = parsedSlugs.filter((slug): slug is string => typeof slug === "string" && slug.length > 0);
+      return slugs.length > 0 ? slugs : null;
     }
-    return typeof parsedSlugs === "string" && parsedSlugs.length > 0 ? [parsedSlugs] : [];
+    return typeof parsedSlugs === "string" && parsedSlugs.length > 0 ? [parsedSlugs] : null;
   } catch {
-    return storedSlug ? [storedSlug] : [];
+    return storedSlug ? [storedSlug] : null;
+  }
+}
+
+function readStoredDashboardControllability(): DashboardControllabilityFilter {
+  try {
+    const value = window.localStorage?.getItem?.(DASHBOARD_CONTROLLABILITY_STORAGE_KEY);
+    return value === "controllable" || value === "non-controllable" ? value : "both";
+  } catch {
+    return "both";
+  }
+}
+
+function readStoredDashboardShowHiddenLabelRows(): boolean {
+  try {
+    return window.localStorage?.getItem?.(DASHBOARD_SHOW_HIDDEN_LABEL_ROWS_STORAGE_KEY) === "true";
+  } catch {
+    return false;
   }
 }
 
@@ -173,6 +195,16 @@ function netTransactionAmount(transactions: DashboardTransactionRow[]): number {
     const amount = Number(transaction.amount);
     return total + (transaction.direction === "credit" ? amount : -amount);
   }, 0);
+}
+
+function filterVisibleDashboardTransactions(
+  transactions: DashboardTransactionRow[],
+  selectedLabelSlugs: string[] | null,
+): DashboardTransactionRow[] {
+  if (selectedLabelSlugs === null) {
+    return transactions;
+  }
+  return transactions.filter((transaction) => selectedLabelSlugs.includes(transaction.label.slug));
 }
 
 function apiErrorDetail(error: unknown): string | null {
@@ -261,7 +293,9 @@ function Home() {
   const [deletingRuleId, setDeletingRuleId] = useState<number | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(initialDashboardMonth);
   const [dashboardAccountIds, setDashboardAccountIds] = useState<number[]>(readStoredDashboardAccountIds);
-  const [dashboardLabelSlugs, setDashboardLabelSlugs] = useState<string[]>(readStoredDashboardLabelSlugs);
+  const [dashboardLabelSlugs, setDashboardLabelSlugs] = useState<string[] | null>(readStoredDashboardLabelSlugs);
+  const [dashboardControllability, setDashboardControllability] = useState<DashboardControllabilityFilter>(readStoredDashboardControllability);
+  const [showHiddenLabelRows, setShowHiddenLabelRows] = useState(readStoredDashboardShowHiddenLabelRows);
   const [dashboardLabels, setDashboardLabels] = useState<DashboardSpendingLabel[]>([]);
   const [dashboardTransactions, setDashboardTransactions] = useState<DashboardTransactionRow[]>([]);
   const [dashboardNetSeries, setDashboardNetSeries] = useState<DashboardNetPoint[]>([]);
@@ -365,7 +399,9 @@ function Home() {
   useEffect(() => {
     writeStoredValue(DASHBOARD_MONTH_STORAGE_KEY, selectedMonth);
     writeStoredValue(DASHBOARD_ACCOUNT_IDS_STORAGE_KEY, JSON.stringify(dashboardAccountIds));
-    writeStoredValue(DASHBOARD_LABEL_SLUG_STORAGE_KEY, JSON.stringify(dashboardLabelSlugs));
+    writeStoredValue(DASHBOARD_LABEL_SLUG_STORAGE_KEY, JSON.stringify(dashboardLabelSlugs ?? []));
+    writeStoredValue(DASHBOARD_CONTROLLABILITY_STORAGE_KEY, dashboardControllability);
+    writeStoredValue(DASHBOARD_SHOW_HIDDEN_LABEL_ROWS_STORAGE_KEY, String(showHiddenLabelRows));
 
     let active = true;
     setDashboardError(null);
@@ -375,14 +411,16 @@ function Home() {
     const comparisonNetMonths = netMonths.filter((month) => month !== selectedMonth);
 
     Promise.all([
-      getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds),
+      getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds, dashboardControllability),
       getDashboardTransactions(selectedMonth, {
         accountIds: dashboardAccountIds,
-        labelSlugs: dashboardLabelSlugs,
+        labelSlugs: showHiddenLabelRows ? [] : dashboardLabelSlugs ?? [],
+        controllability: dashboardControllability,
       }),
       Promise.all(comparisonNetMonths.map((month) => getDashboardTransactions(month, {
         accountIds: dashboardAccountIds,
-        labelSlugs: dashboardLabelSlugs,
+        labelSlugs: dashboardLabelSlugs ?? [],
+        controllability: dashboardControllability,
       }))),
     ])
       .then(([spendingDashboard, transactionDashboard, netDashboards]) => {
@@ -390,7 +428,8 @@ function Home() {
           setDashboardLabels(spendingDashboard.labels);
           setDashboardTransactions(transactionDashboard.transactions);
           const netByMonth = new Map(comparisonNetMonths.map((month, index) => [month, netTransactionAmount(netDashboards[index].transactions)]));
-          netByMonth.set(selectedMonth, netTransactionAmount(transactionDashboard.transactions));
+          const visibleTransactions = filterVisibleDashboardTransactions(transactionDashboard.transactions, dashboardLabelSlugs);
+          netByMonth.set(selectedMonth, netTransactionAmount(visibleTransactions));
           setDashboardNetSeries(netMonths.map((month) => ({ month, amount: netByMonth.get(month) ?? 0 })));
         }
       })
@@ -411,12 +450,19 @@ function Home() {
     return () => {
       active = false;
     };
-  }, [selectedMonth, dashboardAccountIds, dashboardLabelSlugs]);
+  }, [selectedMonth, dashboardAccountIds, dashboardLabelSlugs, dashboardControllability, showHiddenLabelRows]);
 
-  const filteredDashboardLabels = dashboardLabelSlugs.length > 0
+  const filteredDashboardLabels = dashboardLabelSlugs !== null
     ? dashboardLabels.filter((label) => dashboardLabelSlugs.includes(label.label_slug))
     : dashboardLabels;
-  const sortedDashboardTransactions = [...dashboardTransactions].sort((first, second) => {
+  const dashboardTableRows: DashboardTableRow[] = dashboardTransactions.map((transaction) => ({
+    ...transaction,
+    isHiddenByLabel: showHiddenLabelRows && dashboardLabelSlugs !== null && !dashboardLabelSlugs.includes(transaction.label.slug),
+  }));
+  const visibleDashboardTransactions = dashboardTableRows.filter((transaction) => !transaction.isHiddenByLabel);
+  const displayedDashboardTableRows = showHiddenLabelRows ? dashboardTableRows : visibleDashboardTransactions;
+  const hiddenDashboardTransactionCount = displayedDashboardTableRows.filter((transaction) => transaction.isHiddenByLabel).length;
+  const sortedDashboardTransactions = [...displayedDashboardTableRows].sort((first, second) => {
     const firstValue = dashboardSortValue(first, dashboardSort.key);
     const secondValue = dashboardSortValue(second, dashboardSort.key);
     const directionMultiplier = dashboardSort.direction === "asc" ? 1 : -1;
@@ -443,7 +489,7 @@ function Home() {
     }))
     .sort((first, second) => second.value - first.value || first.name.localeCompare(second.name));
   const dashboardTotal = dashboardChartData.reduce((total, item) => total + item.value, 0);
-  const dashboardKpis = dashboardTransactions.reduce(
+  const dashboardKpis = visibleDashboardTransactions.reduce(
     (totals, transaction) => {
       const amount = Number(transaction.amount);
       if (transaction.direction === "credit") {
@@ -488,7 +534,7 @@ function Home() {
   }).join(" ");
   const dashboardNetZeroY = 130 - ((0 - dashboardNetMin) / dashboardNetRange) * 110;
   const allDashboardAccountsSelected = dashboardAccountIds.length === 0 || dashboardAccountIds.length === accounts.length;
-  const allDashboardLabelsSelected = dashboardLabelSlugs.length === 0 || dashboardLabelSlugs.length === labels.length;
+  const allDashboardLabelsSelected = dashboardLabelSlugs === null;
   const dashboardAccountSummary =
     accounts.length === 0
       ? "No accounts"
@@ -498,9 +544,9 @@ function Home() {
   const dashboardLabelSummary =
     labels.length === 0
       ? "No labels"
-      : allDashboardLabelsSelected
-        ? "All labels"
-        : `${dashboardLabelSlugs.length} selected`;
+        : allDashboardLabelsSelected
+          ? "All labels"
+          : `${dashboardLabelSlugs?.length ?? 0} selected`;
   const activeAccount = activeAccountId === "" ? null : accounts.find((account) => account.id === activeAccountId) ?? null;
   const hasPreview = Boolean(preview);
   const showMappingStep = hasPreview && mappingMode === "new";
@@ -526,21 +572,23 @@ function Home() {
     const netMonths = surroundingMonths(selectedMonth);
     const comparisonNetMonths = netMonths.filter((month) => month !== selectedMonth);
     Promise.all([
-      getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds),
+      getDashboardSpendingByLabel(selectedMonth, dashboardAccountIds, dashboardControllability),
       getDashboardTransactions(selectedMonth, {
         accountIds: dashboardAccountIds,
-        labelSlugs: dashboardLabelSlugs,
+        labelSlugs: showHiddenLabelRows ? [] : dashboardLabelSlugs ?? [],
+        controllability: dashboardControllability,
       }),
       Promise.all(comparisonNetMonths.map((month) => getDashboardTransactions(month, {
         accountIds: dashboardAccountIds,
-        labelSlugs: dashboardLabelSlugs,
+        labelSlugs: dashboardLabelSlugs ?? [],
+        controllability: dashboardControllability,
       }))),
     ])
       .then(([spendingDashboard, transactionDashboard, netDashboards]) => {
         setDashboardLabels(spendingDashboard.labels);
         setDashboardTransactions(transactionDashboard.transactions);
         const netByMonth = new Map(comparisonNetMonths.map((month, index) => [month, netTransactionAmount(netDashboards[index].transactions)]));
-        netByMonth.set(selectedMonth, netTransactionAmount(transactionDashboard.transactions));
+        netByMonth.set(selectedMonth, netTransactionAmount(filterVisibleDashboardTransactions(transactionDashboard.transactions, dashboardLabelSlugs)));
         setDashboardNetSeries(netMonths.map((month) => ({ month, amount: netByMonth.get(month) ?? 0 })));
       })
       .catch(() => {
@@ -687,10 +735,14 @@ function Home() {
   }
 
   function toggleDashboardLabel(labelSlug: string, checked: boolean) {
-    const selectedSlugs = allDashboardLabelsSelected ? labels.map((label) => label.slug) : dashboardLabelSlugs;
+    const selectedSlugs = allDashboardLabelsSelected ? labels.map((label) => label.slug) : dashboardLabelSlugs ?? [];
     const nextSlugs = checked ? [...selectedSlugs, labelSlug] : selectedSlugs.filter((slug) => slug !== labelSlug);
     const uniqueSlugs = Array.from(new Set(nextSlugs));
-    setDashboardLabelSlugs(uniqueSlugs.length === labels.length ? [] : uniqueSlugs);
+    setDashboardLabelSlugs(uniqueSlugs.length === labels.length ? null : uniqueSlugs);
+  }
+
+  function toggleAllDashboardLabels() {
+    setDashboardLabelSlugs(allDashboardLabelsSelected ? [] : null);
   }
 
   function toggleDashboardSort(key: DashboardSortKey) {
@@ -1192,6 +1244,18 @@ function Home() {
             <span>Month</span>
             <input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
           </label>
+          <label className="controllability-filter">
+            <span>Controllability</span>
+            <select
+              aria-label="Label controllability"
+              value={dashboardControllability}
+              onChange={(event) => setDashboardControllability(event.target.value as DashboardControllabilityFilter)}
+            >
+              <option value="both">Both</option>
+              <option value="controllable">Controllable</option>
+              <option value="non-controllable">Non-controllable</option>
+            </select>
+          </label>
           <div className="account-filter">
             <span>Accounts</span>
             <details className="account-dropdown">
@@ -1218,14 +1282,14 @@ function Home() {
             <details className="account-dropdown">
               <summary aria-label="Labels">{dashboardLabelSummary}</summary>
               <div className="account-dropdown-menu" role="group" aria-label="Label options">
-                <button type="button" onClick={() => setDashboardLabelSlugs([])}>
-                  Select all labels
+                <button type="button" onClick={toggleAllDashboardLabels}>
+                  {allDashboardLabelsSelected ? "Deselect all labels" : "Select all labels"}
                 </button>
                 {labels.map((label) => (
                   <label key={label.id}>
                     <input
                       type="checkbox"
-                      checked={allDashboardLabelsSelected || dashboardLabelSlugs.includes(label.slug)}
+                      checked={allDashboardLabelsSelected || (dashboardLabelSlugs?.includes(label.slug) ?? false)}
                       onChange={(event) => toggleDashboardLabel(label.slug, event.target.checked)}
                     />
                     <span>{label.name}{label.account_name ? ` (${label.account_name})` : ""}</span>
@@ -1234,11 +1298,19 @@ function Home() {
               </div>
             </details>
           </div>
+          <label className="hidden-row-toggle">
+            <input
+              type="checkbox"
+              checked={showHiddenLabelRows}
+              onChange={(event) => setShowHiddenLabelRows(event.target.checked)}
+            />
+            <span>Show hidden label rows</span>
+          </label>
         </div>
         {dashboardError ? <p className="preview-error">{dashboardError}</p> : null}
         {dashboardLoading ? (
           <div className="dashboard-empty" role="status">Loading dashboard transactions...</div>
-        ) : dashboardTransactions.length === 0 ? (
+        ) : displayedDashboardTableRows.length === 0 ? (
           <div className="dashboard-empty">No transactions available for {selectedMonth} and selected filters.</div>
         ) : (
           <div className="dashboard-transactions">
@@ -1276,7 +1348,9 @@ function Home() {
             </div>
             <div className="dashboard-table-header">
               <h3>Transactions</h3>
-              <span>{dashboardTransactions.length} row(s)</span>
+              <span>
+                {displayedDashboardTableRows.length} row(s){hiddenDashboardTransactionCount > 0 ? `, ${hiddenDashboardTransactionCount} hidden` : ""}
+              </span>
             </div>
             <div className="table-wrap dashboard-table-wrap">
               <table className="transaction-table">
@@ -1292,14 +1366,14 @@ function Home() {
                 </thead>
                 <tbody>
                   {sortedDashboardTransactions.map((transaction) => (
-                    <tr key={transaction.id}>
+                    <tr key={transaction.id} className={transaction.isHiddenByLabel ? "hidden-label-row" : undefined}>
                       <td>{transaction.transaction_date}</td>
                       <td>{transaction.account.name}</td>
                       <td>
                         <strong>{transaction.merchant || transaction.description}</strong>
                         {transaction.merchant ? <span>{transaction.description}</span> : null}
                       </td>
-                      <td>{transaction.label.name}</td>
+                      <td>{transaction.label.name}{transaction.isHiddenByLabel ? <span>Hidden by label filter</span> : null}</td>
                       <td className={`direction-${transaction.direction}`}>{transaction.direction}</td>
                       <td className="amount-cell">{formatTransactionAmount(transaction)}</td>
                     </tr>
@@ -1344,7 +1418,20 @@ function Home() {
                   const tooltipX = Math.min(Math.max(x - 43, 2), 212);
                   const tooltipY = Math.max(y - 33, 2);
                   return (
-                    <g key={point.month} className="net-activity-point" tabIndex={0} aria-label={`${formatMonthLabel(point.month)}: ${formatCurrency(point.amount)}`}>
+                    <g
+                      key={point.month}
+                      className="net-activity-point"
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Select ${formatMonthLabel(point.month)}: ${formatCurrency(point.amount)}`}
+                      onClick={() => setSelectedMonth(point.month)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedMonth(point.month);
+                        }
+                      }}
+                    >
                       <circle className="net-activity-hit-area" cx={x} cy={y} r="12" />
                       <circle cx={x} cy={y} r={point.month === selectedMonth ? 4.5 : 3.5} />
                       <g className="net-activity-tooltip" aria-hidden="true">
