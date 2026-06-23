@@ -222,7 +222,10 @@ export type DashboardTransactionFilters = {
   accountIds?: number[];
   labelIds?: number[];
   labelSlugs?: string[];
+  controllability?: DashboardControllabilityFilter;
 };
+
+export type DashboardControllabilityFilter = "both" | "controllable" | "non-controllable";
 
 export async function getHealth(): Promise<HealthResponse> {
   const response = await api.get<HealthResponse>("/health");
@@ -378,9 +381,13 @@ export async function previewLabelRuleMatches(payload: LabelRulePayload, limit =
   return response.data;
 }
 
-export async function getDashboardSpendingByLabel(month: string, accountIds: number[] = []): Promise<DashboardSpendingByLabel> {
+export async function getDashboardSpendingByLabel(
+  month: string,
+  accountIds: number[] = [],
+  controllability: DashboardControllabilityFilter = "both",
+): Promise<DashboardSpendingByLabel> {
   const response = await api.get<DashboardSpendingByLabel>("/dashboard/spending-by-label", {
-    params: { month, account_ids: accountIds },
+    params: { month, account_ids: accountIds, controllability },
     paramsSerializer: { indexes: null },
   });
   return response.data;
@@ -396,6 +403,7 @@ export async function getDashboardTransactions(
       account_ids: filters.accountIds ?? [],
       label_ids: filters.labelIds ?? [],
       label_slugs: filters.labelSlugs ?? [],
+      controllability: filters.controllability ?? "both",
     },
     paramsSerializer: { indexes: null },
   });
