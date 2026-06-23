@@ -35,6 +35,12 @@ GitHub issue + agent-ready
 
 ## Commands
 
+Run all watchers in one foreground process:
+
+```bash
+.opencode/scripts/openspec-agent-loop-watch.sh
+```
+
 Run one full local tick:
 
 ```bash
@@ -88,9 +94,18 @@ State lives under:
 Important files:
 
 - `openspec-agent-loop.heartbeat`: last tick timestamp.
+- `openspec-agent-loop-watch.heartbeat`: all-watchers supervisor heartbeat.
 - `pr-<number>-opencode-feedback-processed.txt`: processed PR feedback IDs.
 - `*.lock.d`: lock dirs preventing duplicate workers.
 - `*.log`: watcher/worker logs.
+
+## Packaging Options
+
+- Foreground local dev: run `.opencode/scripts/openspec-agent-loop-watch.sh` in one iTerm tab.
+- Cron/launchd style: run `.opencode/scripts/openspec-agent-loop-tick.sh` every minute.
+- Manual debugging: run a specific watcher or worker directly.
+
+Prefer the foreground supervisor while iterating because logs are centralized and Ctrl-C stops all child watchers cleanly. Prefer launchd once the loop is stable and should survive terminal restarts.
 
 ## Guardrails
 
