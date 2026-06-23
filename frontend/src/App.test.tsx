@@ -14,6 +14,7 @@ import {
   deleteLabelRule,
   getDashboardSpendingByLabel,
   getDashboardTransactions,
+  getAppConfig,
   listAccounts,
   listLabelRules,
   listLabels,
@@ -38,6 +39,7 @@ vi.mock("./api/client", () => ({
   deleteLabelRule: vi.fn(),
   getDashboardSpendingByLabel: vi.fn(),
   getDashboardTransactions: vi.fn(),
+  getAppConfig: vi.fn(),
   listAccounts: vi.fn(),
   listLabelRules: vi.fn(),
   listLabels: vi.fn(),
@@ -61,6 +63,7 @@ const mockedDeleteImportUpload = vi.mocked(deleteImportUpload);
 const mockedDeleteLabelRule = vi.mocked(deleteLabelRule);
 const mockedGetDashboardSpendingByLabel = vi.mocked(getDashboardSpendingByLabel);
 const mockedGetDashboardTransactions = vi.mocked(getDashboardTransactions);
+const mockedGetAppConfig = vi.mocked(getAppConfig);
 const mockedListAccounts = vi.mocked(listAccounts);
 const mockedListLabelRules = vi.mocked(listLabelRules);
 const mockedListLabels = vi.mocked(listLabels);
@@ -155,8 +158,10 @@ describe("App", () => {
     mockedUpdateLabelRule.mockReset();
     mockedGetDashboardSpendingByLabel.mockReset();
     mockedGetDashboardTransactions.mockReset();
+    mockedGetAppConfig.mockReset();
     mockedGetDashboardSpendingByLabel.mockResolvedValue({ month: "2026-01", labels: [] });
     mockedGetDashboardTransactions.mockResolvedValue({ month: "2026-01", transactions: [] });
+    mockedGetAppConfig.mockResolvedValue({ demo_mode: false, demo_default_month: "2026-06" });
     mockedPreviewLabelRuleMatches.mockResolvedValue({ total_count: 0, returned_count: 0, rows: [] });
     mockedDeleteLabelRule.mockResolvedValue();
     mockedDeleteImportUpload.mockResolvedValue({ upload_file_id: 1, deleted_transaction_count: 0, status: "removed" });
@@ -322,6 +327,41 @@ describe("App", () => {
     expect(screen.getAllByText("Date").length).toBeGreaterThan(0);
     expect(screen.getByText("Coffee")).toBeInTheDocument();
     expect(mockedPreviewCsv).toHaveBeenCalledWith(file);
+  });
+
+  it("blocks import entry points in demo mode while keeping upload ledger visible", async () => {
+    mockedGetAppConfig.mockResolvedValue({ demo_mode: true, demo_default_month: "2026-06" });
+    mockedListImportUploads.mockResolvedValueOnce([
+      {
+        id: 9,
+        original_filename: "demo-seeded-checking.csv",
+        account_id: 1,
+        account_name: "Demo Checking",
+        status: "imported",
+        row_count: 81,
+        imported_transaction_count: 54,
+        min_transaction_date: "2026-04-01",
+        max_transaction_date: "2026-06-27",
+        created_at: "2026-06-20T00:00:00+00:00",
+      },
+    ]);
+
+    renderApp("/import");
+
+    expect(await screen.findByText("demo-seeded-checking.csv")).toBeInTheDocument();
+    expect(screen.getByText("Demo Checking")).toBeInTheDocument();
+    expect(screen.getByText("Demo imports disabled to protect visitor financial files.")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Upload transactions" })).not.toBeInTheDocument();
+  });
+
+  it("explains disabled demo imports before file upload controls render", async () => {
+    mockedGetAppConfig.mockResolvedValue({ demo_mode: true, demo_default_month: "2026-06" });
+
+    renderApp("/import/new");
+
+    expect(await screen.findByText("Demo imports are disabled")).toBeInTheDocument();
+    expect(screen.getByText("Public demo mode uses bundled synthetic transactions and blocks visitor CSV uploads before any raw rows are stored.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Statement CSV")).not.toBeInTheDocument();
   });
 
   it("loads dashboard transactions and keeps spending summary secondary", async () => {

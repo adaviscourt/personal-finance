@@ -13,7 +13,7 @@ vi.mock("axios", () => ({
   },
 }));
 
-import { getDashboardTransactions, listAccounts, listLabels } from "./client";
+import { getAppConfig, getDashboardTransactions, listAccounts, listLabels } from "./client";
 
 describe("api client", () => {
   beforeEach(() => {
@@ -68,5 +68,13 @@ describe("api client", () => {
 
     expect(mockGet).toHaveBeenNthCalledWith(1, "/accounts");
     expect(mockGet).toHaveBeenNthCalledWith(2, "/labels");
+  });
+
+  it("loads app config for demo mode", async () => {
+    mockGet.mockResolvedValue({ data: { demo_mode: true, demo_default_month: "2026-06" } });
+
+    await expect(getAppConfig()).resolves.toEqual({ demo_mode: true, demo_default_month: "2026-06" });
+
+    expect(mockGet).toHaveBeenCalledWith("/config");
   });
 });

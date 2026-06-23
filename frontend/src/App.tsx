@@ -11,6 +11,7 @@ import {
   deleteImportUpload,
   deleteLabelRule,
   deleteAccount,
+  getAppConfig,
   getDashboardSpendingByLabel,
   getDashboardTransactions,
   listAccounts,
@@ -25,6 +26,7 @@ import {
   updateLabelRule,
   updateImportTemplate,
   type Account,
+  type AppConfig,
   type ConfirmImportResponse,
   type CsvPreviewResponse,
   type DashboardSpendingLabel,
@@ -59,6 +61,8 @@ const IMPORT_STEPS: { id: ImportStep; label: string; help: string }[] = [
   { id: "review", label: "Review", help: "Prepare rows and check duplicate warnings." },
   { id: "confirm", label: "Confirm", help: "Import, then review the month." },
 ];
+const DEMO_MODE_FROM_BUILD = import.meta.env.VITE_DEMO_MODE === "true";
+const DEMO_DEFAULT_MONTH_FROM_BUILD = import.meta.env.VITE_DEMO_DEFAULT_MONTH ?? "2026-06";
 
 type RequiredMappingField = (typeof REQUIRED_FIELDS)[number];
 type OptionalSplitField = (typeof OPTIONAL_SPLIT_FIELDS)[number];
@@ -141,7 +145,10 @@ function writeStoredValue(key: string, value: string) {
 
 function initialDashboardMonth(): string {
   const storedMonth = readStoredDashboardMonth();
-  return storedMonth && /^\d{4}-\d{2}$/.test(storedMonth) ? storedMonth : currentMonth();
+  if (storedMonth && /^\d{4}-\d{2}$/.test(storedMonth)) {
+    return storedMonth;
+  }
+  return DEMO_MODE_FROM_BUILD ? DEMO_DEFAULT_MONTH_FROM_BUILD : currentMonth();
 }
 
 function importReviewMonth(preparedImport: ImportPrepareResponse | null): string | null {
@@ -237,6 +244,7 @@ function Home() {
   const [importUploads, setImportUploads] = useState<ImportUploadSummary[]>([]);
   const [importUploadsLoading, setImportUploadsLoading] = useState(false);
   const [importUploadsError, setImportUploadsError] = useState<string | null>(null);
+  const [appConfig, setAppConfig] = useState<AppConfig>({ demo_mode: DEMO_MODE_FROM_BUILD, demo_default_month: DEMO_DEFAULT_MONTH_FROM_BUILD });
   const [confirmingDeleteUploadId, setConfirmingDeleteUploadId] = useState<number | null>(null);
   const [deletingUploadId, setDeletingUploadId] = useState<number | null>(null);
   const [labels, setLabels] = useState<TransactionLabel[]>([]);
@@ -272,6 +280,14 @@ function Home() {
   const templateRequestId = useRef(0);
 
   useEffect(() => {
+    getAppConfig()
+      .then((config) => {
+        setAppConfig(config);
+        if (config.demo_mode && !readStoredDashboardMonth()) {
+          setSelectedMonth(config.demo_default_month);
+        }
+      })
+      .catch(() => undefined);
     refreshAccounts();
     refreshImportUploads();
   }, []);
@@ -519,6 +535,7 @@ function Home() {
     missingMappingFields.length > 0 ? `Map required field(s): ${missingMappingFields.join(", ")}.` : null,
   ].filter((item): item is string => Boolean(item));
   const reviewMonth = importReviewMonth(preparedImport) ?? selectedMonth;
+  const isDemoMode = appConfig.demo_mode;
 
   function refreshDashboard() {
     setDashboardError(null);
@@ -1009,6 +1026,10 @@ function Home() {
 
   async function handlePreviewSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isDemoMode) {
+      setPreviewError("Public demo mode uses seeded synthetic data and does not accept personal CSV uploads.");
+      return;
+    }
     if (activeAccountId === "") {
       setPreviewError("Choose the account before previewing a CSV.");
       return;
@@ -1172,6 +1193,7 @@ function Home() {
           <p className="app-title">Personal Finance</p>
           <h1>Review monthly transactions</h1>
           <p className="intro">Start with the month, confirm what changed, then use guided modules for imports, labels, and accounts.</p>
+          {isDemoMode ? <p className="template-status">Demo mode: seeded synthetic finances are loaded; personal CSV uploads are disabled.</p> : null}
         </div>
         <nav className="app-nav" aria-label="Primary app modules">
           <NavLink to="/" end>Dashboard</NavLink>
@@ -1427,7 +1449,7 @@ function Home() {
                 <h2 id="upload-heading">Imported files</h2>
                 <p>Review source uploads, then remove every transaction from a mistaken file in one step.</p>
               </div>
-              <Link className="dashboard-review-link" to="/import/new" onClick={() => setImportStep("account")}>Upload transactions</Link>
+              {isDemoMode ? <span className="template-status">Demo imports disabled to protect visitor financial files.</span> : <Link className="dashboard-review-link" to="/import/new" onClick={() => setImportStep("account")}>Upload transactions</Link>}
             </div>
             {importUploadsError ? <p className="preview-error">{importUploadsError}</p> : null}
             {importStatus ? <p className="template-status">{importStatus}</p> : null}
@@ -1437,7 +1459,7 @@ function Home() {
               <div className="import-empty" role="status">
                 <h3>No imported files yet</h3>
                 <p>Uploaded files will appear here with account, transaction count, and imported date range.</p>
-                <Link className="dashboard-review-link" to="/import/new" onClick={() => setImportStep("account")}>Upload transactions</Link>
+                {isDemoMode ? <p>Seeded demo upload history appears here when demo data is initialized.</p> : <Link className="dashboard-review-link" to="/import/new" onClick={() => setImportStep("account")}>Upload transactions</Link>}
               </div>
             ) : (
               <div className="table-wrap import-upload-table">
@@ -1499,6 +1521,15 @@ function Home() {
           </div>
           <Link className="secondary-action" to="/import">Back to imported files</Link>
         </div>
+        {isDemoMode ? (
+          <div className="import-empty" role="status">
+            <h3>Demo imports are disabled</h3>
+            <p>Public demo mode uses bundled synthetic transactions and blocks visitor CSV uploads before any raw rows are stored.</p>
+            <Link className="dashboard-review-link" to="/import">Back to imported files</Link>
+          </div>
+        ) : null}
+        {!isDemoMode ? (
+        <>
         <ol className="workflow-steps" aria-label="Import workflow order">
           {IMPORT_STEPS.map((step, index) => {
             const currentIndex = importStepIndex(importStep);
@@ -1899,6 +1930,8 @@ function Home() {
             </div>
           </div>
         )}
+        </>
+        ) : null}
       </section>
         )} />
         <Route path="/labeling" element={(

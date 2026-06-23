@@ -151,6 +151,8 @@ def init_db(database_engine=engine) -> None:
     migrate_schema(database_engine)
     create_schema_indexes(database_engine)
     seed_labels(database_engine)
+    if settings.demo_mode:
+        seed_demo_data(database_engine)
 
 
 def migrate_schema(database_engine=engine) -> None:
@@ -204,6 +206,140 @@ def seed_labels(database_engine=engine) -> None:
             elif existing_label.is_system:
                 existing_label.is_controllable = is_controllable
                 session.add(existing_label)
+        session.commit()
+
+
+def demo_transaction_fingerprint(account_id: int, transaction_date: date, description: str, amount: Decimal, direction: str) -> str:
+    source = "|".join(
+        [
+            str(account_id),
+            transaction_date.isoformat(),
+            " ".join(description.casefold().split()),
+            str(amount.quantize(Decimal("0.01"))),
+            direction,
+        ]
+    )
+    import hashlib
+
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def seed_demo_data(database_engine=engine) -> None:
+    with Session(database_engine) as session:
+        existing_demo = session.exec(select(Account).where(Account.name == "Demo Checking")).first()
+        if existing_demo is not None:
+            return
+
+        accounts = {
+            "checking": Account(name="Demo Checking", institution="Demo Credit Union", account_type="checking"),
+            "savings": Account(name="Demo Savings", institution="Demo Credit Union", account_type="savings"),
+            "card": Account(name="Demo Rewards Card", institution="Demo Card Bank", account_type="credit card"),
+        }
+        session.add_all(accounts.values())
+        session.commit()
+        for account in accounts.values():
+            session.refresh(account)
+
+        labels_by_slug = {label.slug: label for label in session.exec(select(Label)).all()}
+
+        def ensure_label(slug: str, name: str, is_controllable: bool, account: Account | None = None) -> Label:
+            label = labels_by_slug.get(slug)
+            if label is None:
+                label = Label(
+                    slug=slug,
+                    name=name,
+                    account_id=account.id if account is not None else None,
+                    is_controllable=is_controllable,
+                    is_system=False,
+                )
+                session.add(label)
+                session.commit()
+                session.refresh(label)
+                labels_by_slug[slug] = label
+            return label
+
+        labels = {
+            "rent": ensure_label("demo-rent", "Rent", False),
+            "insurance": ensure_label("demo-insurance", "Insurance", False),
+            "travel": ensure_label("demo-travel", "Travel", True),
+            "fitness": ensure_label("demo-fitness", "Fitness", True),
+            "hobbies": ensure_label("demo-hobbies", "Hobbies", True),
+            "savings": ensure_label("demo-savings", "Savings", False, accounts["savings"]),
+            "groceries": labels_by_slug["groceries"],
+            "paychecks": labels_by_slug["paychecks"],
+            "utilities": labels_by_slug["utilities"],
+            "transportation": labels_by_slug["auto"],
+            "subscriptions": labels_by_slug["subscriptions"],
+            "dining": labels_by_slug["dining"],
+            "entertainment": labels_by_slug["life"],
+            "uncategorized": labels_by_slug["uncategorized"],
+        }
+
+        upload = UploadFile(
+            account_id=accounts["checking"].id,
+            original_filename="demo-seeded-checking.csv",
+            content_type="text/csv",
+            row_count=81,
+            status="imported",
+            created_at=datetime(2026, 6, 20, tzinfo=timezone.utc),
+        )
+        session.add(upload)
+        session.commit()
+        session.refresh(upload)
+
+        def add_tx(account_key: str, tx_date: str, description: str, merchant: str | None, amount: str, direction: str, label_key: str | None, source_category: str) -> None:
+            account = accounts[account_key]
+            assert account.id is not None
+            transaction_date = date.fromisoformat(tx_date)
+            decimal_amount = Decimal(amount).quantize(Decimal("0.01"))
+            session.add(
+                Transaction(
+                    account_id=account.id,
+                    upload_file_id=upload.id,
+                    label_id=labels[label_key].id if label_key is not None else None,
+                    transaction_date=transaction_date,
+                    transaction_month=tx_date[:7],
+                    description=description,
+                    normalized_description=" ".join(description.casefold().split()),
+                    merchant=merchant,
+                    amount=decimal_amount,
+                    direction=direction,
+                    source_type="Demo seed",
+                    source_category=source_category,
+                    duplicate_fingerprint=demo_transaction_fingerprint(account.id, transaction_date, description, decimal_amount, direction),
+                )
+            )
+
+        for month in ("2026-04", "2026-05", "2026-06"):
+            add_tx("checking", f"{month}-01", "Demo Payroll Deposit", "Acme Software Payroll", "4166.67", "credit", "paychecks", "Income")
+            add_tx("checking", f"{month}-15", "Demo Payroll Deposit", "Acme Software Payroll", "4166.67", "credit", "paychecks", "Income")
+            add_tx("checking", f"{month}-02", "Demo Apartment Rent", "Cedar Street Apartments", "1825.00", "debit", "rent", "Housing")
+            add_tx("checking", f"{month}-03", "Demo Electric Utility", "Metro Electric", "96.40", "debit", "utilities", "Utilities")
+            add_tx("checking", f"{month}-04", "Demo Fiber Internet", "City Fiber", "65.00", "debit", "utilities", "Utilities")
+            add_tx("checking", f"{month}-05", "Demo Transit Pass", "Metro Transit", "88.00", "debit", "transportation", "Transportation")
+            add_tx("checking", f"{month}-06", "Demo Renters Insurance", "Harbor Mutual", "18.75", "debit", "insurance", "Insurance")
+            add_tx("checking", f"{month}-07", "Demo Transfer To Savings", "Demo Credit Union", "700.00", "debit", "savings", "Savings")
+            add_tx("savings", f"{month}-07", "Demo Savings Transfer", "Demo Credit Union", "700.00", "credit", "savings", "Savings")
+            add_tx("card", f"{month}-08", "Demo Grocery Run", "Green Basket Market", "142.18", "debit", "groceries", "Groceries")
+            add_tx("card", f"{month}-10", "Demo Phone Bill", "Signal Mobile", "52.00", "debit", "utilities", "Utilities")
+            add_tx("card", f"{month}-12", "Demo Streaming Bundle", "StreamBox", "23.99", "debit", "subscriptions", "Subscriptions")
+            add_tx("card", f"{month}-13", "Demo Gym Membership", "Peak Fitness", "58.00", "debit", "fitness", "Fitness")
+            add_tx("card", f"{month}-14", "Demo Dinner With Friends", "Northside Tacos", "46.25", "debit", "dining", "Dining")
+            add_tx("card", f"{month}-18", "Demo Movie Night", "Riverside Cinema", "31.50", "debit", "entertainment", "Entertainment")
+            add_tx("card", f"{month}-21", "Demo Weekend Trail Gear", "Trailhead Supply", "84.20", "debit", "hobbies", "Hobbies")
+            add_tx("card", f"{month}-24", "Demo Travel Fund Flight", "Sample Airlines", "260.00", "debit", "travel", "Travel")
+            add_tx("card", f"{month}-27", "Demo Corner Shop", "Corner Shop", "19.44", "debit", None, "Uncategorized")
+
+        session.add(
+            TransactionLabelRule(
+                label_id=labels["groceries"].id or 0,
+                account_id=accounts["card"].id,
+                match_field="description",
+                match_type="contains",
+                pattern="Grocery",
+                created_at=datetime(2026, 6, 20, tzinfo=timezone.utc),
+            )
+        )
         session.commit()
 
 

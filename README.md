@@ -55,6 +55,19 @@ docker compose down -v
 - `make test-backend` runs backend tests.
 - `make test-frontend` runs frontend tests.
 
+## Public Demo Mode
+
+Enable demo mode with `DEMO_MODE=true`. Optional `DEMO_DEFAULT_MONTH=2026-06` controls the dashboard's default seeded month. Frontend builds can mirror this with `VITE_DEMO_MODE=true` and `VITE_DEMO_DEFAULT_MONTH=2026-06`.
+
+Demo mode seeds deterministic synthetic checking, savings, and credit-card data and blocks CSV upload endpoints before raw rows are stored. Normal local, Docker, and Unraid behavior remains unchanged when `DEMO_MODE` is unset.
+
+Vercel setup for a static demo frontend:
+
+- Create a new Vercel project from this repo and use `vercel.json` defaults.
+- Set env vars: `VITE_DEMO_MODE=true`, `VITE_DEMO_DEFAULT_MONTH=2026-06`, and `VITE_API_BASE_URL` pointing to the demo API runtime.
+- If running the FastAPI backend on Vercel is required, add a small ASGI serverless adapter under an `api/` entrypoint; the current backend is container-oriented, so the smallest supported first deployment is Vercel frontend plus demo-mode API URL.
+- Add the desired subdomain in Vercel project domains, then point the existing-site DNS record to Vercel as instructed by the dashboard.
+
 ## MVP Workflow
 
 1. Start Docker with `docker compose up --build`.

@@ -9,6 +9,11 @@ export type HealthResponse = {
   database: string;
 };
 
+export type AppConfig = {
+  demo_mode: boolean;
+  demo_default_month: string;
+};
+
 export type CsvPreviewResponse = {
   headers: string[];
   rows: Record<string, string | null>[];
@@ -226,6 +231,11 @@ export type DashboardTransactionFilters = {
 
 export async function getHealth(): Promise<HealthResponse> {
   const response = await api.get<HealthResponse>("/health");
+  return response.data;
+}
+
+export async function getAppConfig(): Promise<AppConfig> {
+  const response = await api.get<AppConfig>("/config");
   return response.data;
 }
 

@@ -30,6 +30,7 @@ from app.database import (
     init_db,
     utc_now,
 )
+from app.config import settings
 
 
 MAX_PREVIEW_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -329,6 +330,11 @@ class DashboardTransactionListResponse(BaseModel):
     transactions: list[DashboardTransactionRow]
 
 
+class AppConfigResponse(BaseModel):
+    demo_mode: bool
+    demo_default_month: str
+
+
 def serialize_template(template: ImportTemplate) -> ImportTemplateResponse:
     if template.id is None:
         raise HTTPException(status_code=500, detail="Saved template is missing an id.")
@@ -472,6 +478,14 @@ async def read_csv_frame(file: UploadFile) -> pl.DataFrame:
     if not frame.columns:
         raise HTTPException(status_code=400, detail="CSV file must include headers.")
     return frame
+
+
+def reject_demo_file_upload() -> None:
+    if settings.demo_mode:
+        raise HTTPException(
+            status_code=403,
+            detail="Public demo mode does not accept personal CSV uploads. Use seeded synthetic data instead.",
+        )
 
 
 def parse_template_config(config: str) -> ImportTemplateConfig:
@@ -832,6 +846,11 @@ def health() -> dict[str, str]:
     return {"status": "ok", "database": "ok"}
 
 
+@app.get("/config")
+def get_app_config() -> AppConfigResponse:
+    return AppConfigResponse(demo_mode=settings.demo_mode, demo_default_month=settings.demo_default_month)
+
+
 @app.get("/accounts")
 def list_accounts() -> list[AccountResponse]:
     with Session(engine) as session:
@@ -979,6 +998,7 @@ def delete_import_upload_transactions(upload_file_id: int) -> ImportUploadDelete
 
 @app.post("/imports/preview")
 async def preview_import(file: UploadFile) -> CsvPreviewResponse:
+    reject_demo_file_upload()
     frame = await read_csv_frame(file)
     headers = frame.columns
     preview_rows = frame.head(5).to_dicts()
@@ -987,6 +1007,7 @@ async def preview_import(file: UploadFile) -> CsvPreviewResponse:
 
 @app.post("/imports/unique-values")
 async def list_unique_source_values(file: UploadFile, source_column: str = Form(...)) -> UniqueValuesResponse:
+    reject_demo_file_upload()
     frame = await read_csv_frame(file)
     if source_column not in frame.columns:
         raise HTTPException(status_code=400, detail=f"Source column not found: {source_column}")
@@ -1000,6 +1021,7 @@ async def preview_transformed_import(
     file: UploadFile,
     template_config: str = Form(...),
 ) -> TransformedPreviewResponse:
+    reject_demo_file_upload()
     frame = await read_csv_frame(file)
     config = parse_template_config(template_config)
     return TransformedPreviewResponse(rows=transform_rows(frame, config))
@@ -1011,6 +1033,7 @@ async def prepare_import(
     account_id: int = Form(...),
     template_config: str = Form(...),
 ) -> ImportPrepareResponse:
+    reject_demo_file_upload()
     frame = await read_csv_frame(file)
     config = parse_template_config(template_config)
     raw_rows = frame.to_dicts()
