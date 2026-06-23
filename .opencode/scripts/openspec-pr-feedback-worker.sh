@@ -6,12 +6,13 @@ usage() {
 Usage:
   .opencode/scripts/openspec-pr-feedback-worker.sh <pr-number>
 
-Handles unprocessed PR feedback containing @opencode on an agent-managed PR.
+Handles unprocessed PR feedback beginning with /opencode on an agent-managed PR.
 The worker reacts with eyes when picked up, runs opencode against the same PR
 branch, then marks feedback IDs processed after a successful push.
 
 Environment:
   WORKTREE_BASE       Optional parent directory for worktrees. Defaults to ../<repo-name>-worktrees.
+  FEEDBACK_TRIGGER    Optional comment prefix. Defaults to /opencode.
   OPENCODE_MODEL      Optional model override, e.g. openai/gpt-5.5.
   OPENCODE_RUN_FLAGS  Optional extra flags passed to opencode run.
 USAGE
@@ -88,6 +89,7 @@ REPO_NAME="$(basename "$REPO_ROOT")"
 WORKTREE_BASE="${WORKTREE_BASE:-$(dirname "$REPO_ROOT")/${REPO_NAME}-worktrees}"
 STATE_DIR="${STATE_DIR:-$HOME/.opencode/state/$REPO_NAME}"
 PROCESSED_FILE="$STATE_DIR/pr-${PR_NUMBER}-opencode-feedback-processed.txt"
+FEEDBACK_TRIGGER="${FEEDBACK_TRIGGER:-/opencode}"
 mkdir -p "$WORKTREE_BASE" "$STATE_DIR"
 touch "$PROCESSED_FILE"
 
@@ -106,7 +108,6 @@ PR_TITLE="$(printf '%s' "$PR_JSON" | jq -r '.title')"
 PR_URL="$(printf '%s' "$PR_JSON" | jq -r '.url')"
 PR_BODY="$(printf '%s' "$PR_JSON" | jq -r '.body // ""')"
 BRANCH="$(printf '%s' "$PR_JSON" | jq -r '.headRefName')"
-CURRENT_USER="$(gh api user --jq '.login')"
 
 ISSUE_COMMENTS_JSON="$(gh api "repos/:owner/:repo/issues/${PR_NUMBER}/comments?per_page=100" 2>/dev/null || printf '[]')"
 INLINE_COMMENTS_JSON="$(gh api "repos/:owner/:repo/pulls/${PR_NUMBER}/comments?per_page=100" 2>/dev/null || printf '[]')"
@@ -114,30 +115,27 @@ REVIEWS_JSON="$(gh api "repos/:owner/:repo/pulls/${PR_NUMBER}/reviews?per_page=1
 
 PROCESSED_JSON="$(jq -R -s 'split("\n") | map(select(length > 0))' "$PROCESSED_FILE")"
 
-ISSUE_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg me "$CURRENT_USER" '
+ISSUE_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '
   [.[]
-    | select(.body | contains("@opencode"))
-    | select(.user.login != $me)
+    | select((.body // "") | startswith($trigger))
     | .key = ("issue-comment:" + (.id|tostring))
     | select(($done | index(.key)) | not)
     | "### [PR comment] id=\(.id) @\(.user.login) at \(.created_at):\n\(.body)"
   ] | join("\n\n---\n\n")
 ' <<< "$ISSUE_COMMENTS_JSON")"
 
-INLINE_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg me "$CURRENT_USER" '
+INLINE_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '
   [.[]
-    | select(.body | contains("@opencode"))
-    | select(.user.login != $me)
+    | select((.body // "") | startswith($trigger))
     | .key = ("inline-comment:" + (.id|tostring))
     | select(($done | index(.key)) | not)
     | "### [inline review comment] id=\(.id) @\(.user.login) at \(.created_at) -- \(.path):\(.line // .original_line // "?"):\n\(.body)"
   ] | join("\n\n---\n\n")
 ' <<< "$INLINE_COMMENTS_JSON")"
 
-REVIEW_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg me "$CURRENT_USER" '
+REVIEW_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '
   [.[]
-    | select((.body // "") | contains("@opencode"))
-    | select(.user.login != $me)
+    | select((.body // "") | startswith($trigger))
     | .key = ("review:" + (.id|tostring))
     | select(($done | index(.key)) | not)
     | "### [review summary] id=\(.id) @\(.user.login) at \(.submitted_at) -- \(.state):\n\(.body)"
@@ -146,14 +144,14 @@ REVIEW_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg me "$CURRENT_USE
 
 NEW_KEYS="$(
   {
-    jq -r --argjson done "$PROCESSED_JSON" --arg me "$CURRENT_USER" '.[] | select(.body | contains("@opencode")) | select(.user.login != $me) | "issue-comment:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$ISSUE_COMMENTS_JSON"
-    jq -r --argjson done "$PROCESSED_JSON" --arg me "$CURRENT_USER" '.[] | select(.body | contains("@opencode")) | select(.user.login != $me) | "inline-comment:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$INLINE_COMMENTS_JSON"
-    jq -r --argjson done "$PROCESSED_JSON" --arg me "$CURRENT_USER" '.[] | select((.body // "") | contains("@opencode")) | select(.user.login != $me) | "review:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$REVIEWS_JSON"
+    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "issue-comment:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$ISSUE_COMMENTS_JSON"
+    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "inline-comment:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$INLINE_COMMENTS_JSON"
+    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "review:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$REVIEWS_JSON"
   } | sort -u
 )"
 
 if [[ -z "$NEW_KEYS" ]]; then
-  printf 'No unprocessed @opencode feedback for PR #%s.\n' "$PR_NUMBER"
+  printf 'No unprocessed %s feedback for PR #%s.\n' "$FEEDBACK_TRIGGER" "$PR_NUMBER"
   exit 0
 fi
 
@@ -197,7 +195,7 @@ Branch: ${BRANCH}
 Worktree: ${WORKTREE}
 ${CHANGE_NAME:+OpenSpec change: ${CHANGE_NAME}}
 
-Only process feedback that explicitly mentions @opencode. Treat each item below as human-in-the-loop direction.
+Only process feedback that begins with ${FEEDBACK_TRIGGER}. Treat each item below as human-in-the-loop direction.
 
 UNPROCESSED REVIEW SUMMARIES:
 ---
@@ -261,4 +259,4 @@ sort -u "$PROCESSED_FILE" -o "$PROCESSED_FILE"
 gh issue edit "$PR_NUMBER" --remove-label openspec-implementing >/dev/null 2>&1 || true
 gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=agent-done" >/dev/null 2>&1 || true
 
-printf 'Processed @opencode feedback for PR #%s.\n' "$PR_NUMBER"
+printf 'Processed %s feedback for PR #%s.\n' "$FEEDBACK_TRIGGER" "$PR_NUMBER"

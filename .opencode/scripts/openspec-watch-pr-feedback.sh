@@ -7,11 +7,12 @@ Usage:
   .opencode/scripts/openspec-watch-pr-feedback.sh [--once] [--interval seconds]
 
 Polls open PRs labeled agent-feedback-ready. If unprocessed comments or review
-comments contain @opencode, spawns a feedback worker for the same PR branch.
+comments begin with /opencode, spawns a feedback worker for the same PR branch.
 
 Environment:
   STATE_DIR         Optional state/log dir. Defaults to ~/.opencode/state/<repo-name>.
   PR_LABEL          Optional watch label. Defaults to agent-feedback-ready.
+  FEEDBACK_TRIGGER  Optional comment prefix. Defaults to /opencode.
   WORKER            Optional worker script path.
   DEBOUNCE_SECONDS  Optional quiet period before processing. Defaults to 300.
 USAGE
@@ -63,6 +64,7 @@ STATE_DIR="${STATE_DIR:-$HOME/.opencode/state/$REPO_NAME}"
 LOCK_DIR="$STATE_DIR/openspec-feedback-watch.lock.d"
 LOG_FILE="$STATE_DIR/openspec-feedback-watch.log"
 PR_LABEL="${PR_LABEL:-agent-feedback-ready}"
+FEEDBACK_TRIGGER="${FEEDBACK_TRIGGER:-/opencode}"
 WORKER="${WORKER:-$REPO_ROOT/.opencode/scripts/openspec-pr-feedback-worker.sh}"
 DEBOUNCE_SECONDS="${DEBOUNCE_SECONDS:-300}"
 mkdir -p "$STATE_DIR"
@@ -76,27 +78,26 @@ iso_to_epoch() {
 has_unprocessed_feedback() {
   local pr_number="$1" processed_file="$STATE_DIR/pr-${pr_number}-opencode-feedback-processed.txt"
   touch "$processed_file"
-  local processed_json current_user issue_json inline_json reviews_json newest_ts count
+  local processed_json issue_json inline_json reviews_json newest_ts count
   processed_json="$(jq -R -s 'split("\n") | map(select(length > 0))' "$processed_file")"
-  current_user="$(gh api user --jq '.login')"
   issue_json="$(gh api "repos/:owner/:repo/issues/${pr_number}/comments?per_page=100" 2>/dev/null || printf '[]')"
   inline_json="$(gh api "repos/:owner/:repo/pulls/${pr_number}/comments?per_page=100" 2>/dev/null || printf '[]')"
   reviews_json="$(gh api "repos/:owner/:repo/pulls/${pr_number}/reviews?per_page=100" 2>/dev/null || printf '[]')"
 
   count="$(
     {
-      jq -r --argjson done "$processed_json" --arg me "$current_user" '.[] | select(.body | contains("@opencode")) | select(.user.login != $me) | "issue-comment:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$issue_json"
-      jq -r --argjson done "$processed_json" --arg me "$current_user" '.[] | select(.body | contains("@opencode")) | select(.user.login != $me) | "inline-comment:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$inline_json"
-      jq -r --argjson done "$processed_json" --arg me "$current_user" '.[] | select((.body // "") | contains("@opencode")) | select(.user.login != $me) | "review:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$reviews_json"
+      jq -r --argjson done "$processed_json" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "issue-comment:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$issue_json"
+      jq -r --argjson done "$processed_json" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "inline-comment:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$inline_json"
+      jq -r --argjson done "$processed_json" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "review:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$reviews_json"
     } | sed '/^$/d' | wc -l | tr -d ' '
   )"
   [[ "$count" -gt 0 ]] || return 1
 
   newest_ts="$(
     {
-      jq -r --argjson done "$processed_json" --arg me "$current_user" '.[] | select(.body | contains("@opencode")) | select(.user.login != $me) | "issue-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | .created_at' <<< "$issue_json"
-      jq -r --argjson done "$processed_json" --arg me "$current_user" '.[] | select(.body | contains("@opencode")) | select(.user.login != $me) | "inline-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | .created_at' <<< "$inline_json"
-      jq -r --argjson done "$processed_json" --arg me "$current_user" '.[] | select((.body // "") | contains("@opencode")) | select(.user.login != $me) | "review:" + (.id|tostring) as $key | select(($done | index($key)) | not) | .submitted_at' <<< "$reviews_json"
+      jq -r --argjson done "$processed_json" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "issue-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | .created_at' <<< "$issue_json"
+      jq -r --argjson done "$processed_json" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "inline-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | .created_at' <<< "$inline_json"
+      jq -r --argjson done "$processed_json" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "review:" + (.id|tostring) as $key | select(($done | index($key)) | not) | .submitted_at' <<< "$reviews_json"
     } | sort -r | head -n 1
   )"
   [[ -n "$newest_ts" ]] || return 1
@@ -144,7 +145,7 @@ tick() {
     --label "$PR_LABEL" \
     --state open \
     --json number,title,labels \
-    --jq '.[] | select(([.labels[].name] | index("openspec-implementing")) | not) | "\(.number)|\(.title)"')"
+    --jq '.[] | select(([.labels[].name] | index("openspec-implementing")) | not) | "\(.number)|\(.title)"')" || return 1
 
   if [[ -z "$prs" ]]; then
     return 0
@@ -181,7 +182,9 @@ OSA
 }
 
 while true; do
-  tick
+  if ! tick; then
+    printf '[%s] feedback watcher tick failed; retrying\n' "$(date)" >> "$LOG_FILE"
+  fi
   if [[ "$ONCE" -eq 1 ]]; then
     exit 0
   fi

@@ -141,7 +141,7 @@ Run unattended but self-enforce these rules:
 - Use the ship skill to commit, push, and update this same PR branch.
 - PR body must mention OpenSpec change ${CHANGE_NAME} and exact tasks completed.
 ${ISSUE_NUMBER:+- After implementation is complete, PR body should include "Closes #${ISSUE_NUMBER}".}
-- Keep label agent-feedback-ready on the PR so @opencode feedback can be handled.
+- Keep label agent-feedback-ready on the PR so /opencode feedback can be handled.
 - Do not archive the OpenSpec change.
 EOF
 )"

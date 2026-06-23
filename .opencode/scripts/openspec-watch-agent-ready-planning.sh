@@ -93,14 +93,14 @@ tick() {
 
   cd "$REPO_ROOT"
   gh label create "$ISSUE_LABEL" --description "Ready for local opencode agent pickup" --color 5319E7 >/dev/null 2>&1 || true
-  current_user="$(gh api user --jq '.login')"
+  current_user="$(gh api user --jq '.login')" || return 1
 
   issues="$(gh issue list \
     --assignee "@me" \
     --label "$ISSUE_LABEL" \
     --state open \
     --json number,title,author,labels \
-    --jq ".[] | select(.author.login == \"$current_user\") | select(([.labels[].name] | index(\"openspec-planning\") or index(\"openspec-review-ready\") or index(\"openspec-apply-ready\") or index(\"openspec-implementing\")) | not) | \"\\(.number)|\\(.title)\"")"
+    --jq ".[] | select(.author.login == \"$current_user\") | select(([.labels[].name] | index(\"openspec-planning\") or index(\"openspec-review-ready\") or index(\"openspec-apply-ready\") or index(\"openspec-implementing\")) | not) | \"\\(.number)|\\(.title)\"")" || return 1
 
   if [[ -z "$issues" ]]; then
     return 0
@@ -132,7 +132,9 @@ OSA
 }
 
 while true; do
-  tick
+  if ! tick; then
+    printf '[%s] planning watcher tick failed; retrying\n' "$(date)" >> "$LOG_FILE"
+  fi
   if [[ "$ONCE" -eq 1 ]]; then
     exit 0
   fi

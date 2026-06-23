@@ -98,7 +98,7 @@ tick() {
     --label "$PR_LABEL" \
     --state open \
     --json number,title,labels \
-    --jq '.[] | select(([.labels[].name] | index("openspec-implementing")) | not) | "\(.number)|\(.title)"')"
+    --jq '.[] | select(([.labels[].name] | index("openspec-implementing")) | not) | "\(.number)|\(.title)"')" || return 1
 
   if [[ -z "$prs" ]]; then
     return 0
@@ -130,7 +130,9 @@ OSA
 }
 
 while true; do
-  tick
+  if ! tick; then
+    printf '[%s] apply watcher tick failed; retrying\n' "$(date)" >> "$LOG_FILE"
+  fi
   if [[ "$ONCE" -eq 1 ]]; then
     exit 0
   fi

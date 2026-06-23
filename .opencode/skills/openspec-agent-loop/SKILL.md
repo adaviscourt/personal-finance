@@ -1,6 +1,6 @@
 ---
 name: openspec-agent-loop
-description: Use when running or explaining the local GitHub issue-to-OpenSpec-to-PR agent loop, including agent-ready, openspec-apply-ready, and @opencode PR feedback automation.
+description: Use when running or explaining the local GitHub issue-to-OpenSpec-to-PR agent loop, including agent-ready, openspec-apply-ready, and /opencode PR feedback automation.
 compatibility: Requires opencode CLI, OpenSpec CLI, GitHub CLI, jq, git, and iTerm2 for tab spawning.
 ---
 
@@ -16,7 +16,7 @@ GitHub issue + agent-ready
   -> PR with OpenSpec artifacts
   -> human labels PR openspec-apply-ready
   -> implementation worker updates same PR
-  -> human comments @opencode on PR
+  -> human comments /opencode on PR
   -> feedback worker updates same PR
   -> human merges
   -> archive workflow runs on main
@@ -29,7 +29,7 @@ GitHub issue + agent-ready
 - `openspec-review-ready`: OpenSpec artifact PR is ready for human review.
 - `openspec-apply-ready`: human approved artifact PR for implementation in same PR.
 - `openspec-implementing`: implementation or feedback worker is running.
-- `agent-feedback-ready`: PR accepts `@opencode` feedback pickup.
+- `agent-feedback-ready`: PR accepts `/opencode` feedback pickup.
 - `agent-done`: agent believes PR is ready for human review.
 - `agent-blocked`: agent stopped and needs human help.
 
@@ -80,7 +80,7 @@ Run specific workers manually:
 3. Review artifacts in PR.
 4. Add `openspec-apply-ready` to same PR when approved.
 5. Implementation worker updates same PR and changes linkage to `Closes #<issue>`.
-6. Add PR comments or review comments beginning with `@opencode` for follow-up changes.
+6. Add PR comments or review comments beginning with `/opencode` for follow-up changes.
 7. Feedback worker reacts with eyes, updates the same branch, then marks processed feedback in local state and reacts with `hooray` where GitHub supports reactions.
 
 ## State
@@ -113,7 +113,7 @@ Prefer the foreground supervisor while iterating because logs are centralized an
 - Implementation phase uses `openspec-apply-change`; it must keep scope to approved artifacts.
 - Same PR is used for planning and implementation.
 - Raw issue is not closed until implementation is complete.
-- Feedback pickup requires explicit `@opencode` mention.
+- Feedback pickup requires explicit `/opencode` comment prefix.
 - Feedback de-dupe is based on processed GitHub comment/review IDs, not emoji state.
 - No automatic merge.
 - Do not archive from local workers; existing GitHub archive workflow handles merge-to-main completion.
