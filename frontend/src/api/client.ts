@@ -1,8 +1,12 @@
 import axios from "axios";
 
+import { demoBackend } from "./demoBackend";
+
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000",
 });
+
+const USE_DEMO_BACKEND = import.meta.env.VITE_DEMO_MODE === "true";
 
 export type HealthResponse = {
   status: string;
@@ -230,16 +234,25 @@ export type DashboardTransactionFilters = {
 };
 
 export async function getHealth(): Promise<HealthResponse> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.getHealth();
+  }
   const response = await api.get<HealthResponse>("/health");
   return response.data;
 }
 
 export async function getAppConfig(): Promise<AppConfig> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.getAppConfig();
+  }
   const response = await api.get<AppConfig>("/config");
   return response.data;
 }
 
 export async function previewCsv(file: File): Promise<CsvPreviewResponse> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.previewCsv();
+  }
   const formData = new FormData();
   formData.append("file", file);
 
@@ -248,6 +261,9 @@ export async function previewCsv(file: File): Promise<CsvPreviewResponse> {
 }
 
 export async function listUniqueValues(file: File, sourceColumn: string): Promise<UniqueValuesResponse> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.listUniqueValues();
+  }
   const formData = new FormData();
   formData.append("file", file);
   formData.append("source_column", sourceColumn);
@@ -260,6 +276,9 @@ export async function previewTransformedCsv(
   file: File,
   templateConfig: ImportTemplateConfig,
 ): Promise<TransformedPreviewResponse> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.previewTransformedCsv();
+  }
   const formData = new FormData();
   formData.append("file", file);
   formData.append("template_config", JSON.stringify(templateConfig));
@@ -273,6 +292,9 @@ export async function prepareImport(
   accountId: number,
   templateConfig: ImportTemplateConfig,
 ): Promise<ImportPrepareResponse> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.prepareImport();
+  }
   const formData = new FormData();
   formData.append("file", file);
   formData.append("account_id", String(accountId));
@@ -287,6 +309,9 @@ export async function confirmImport(
   templateConfig: ImportTemplateConfig,
   allowDuplicates = false,
 ): Promise<ConfirmImportResponse> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.confirmImport();
+  }
   const response = await api.post<ConfirmImportResponse>("/imports/confirm", {
     upload_file_id: uploadFileId,
     template_config: templateConfig,
@@ -296,31 +321,49 @@ export async function confirmImport(
 }
 
 export async function listImportUploads(): Promise<ImportUploadSummary[]> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.listImportUploads();
+  }
   const response = await api.get<ImportUploadSummary[]>("/imports/uploads");
   return response.data;
 }
 
 export async function deleteImportUpload(uploadFileId: number): Promise<ImportUploadDeleteResponse> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.deleteImportUpload(uploadFileId);
+  }
   const response = await api.delete<ImportUploadDeleteResponse>(`/imports/uploads/${uploadFileId}`);
   return response.data;
 }
 
 export async function listAccounts(): Promise<Account[]> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.listAccounts();
+  }
   const response = await api.get<Account[]>("/accounts");
   return response.data;
 }
 
 export async function createAccount(name: string): Promise<Account> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.createAccount(name);
+  }
   const response = await api.post<Account>("/accounts", { name });
   return response.data;
 }
 
 export async function renameAccount(accountId: number, name: string): Promise<Account> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.renameAccount(accountId, name);
+  }
   const response = await api.put<Account>(`/accounts/${accountId}`, { name });
   return response.data;
 }
 
 export async function deleteAccount(accountId: number, confirmed = false): Promise<AccountDeleteWarning | null> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.deleteAccount(accountId);
+  }
   const response = await api.delete<AccountDeleteWarning | undefined>(`/accounts/${accountId}`, {
     params: { confirmed },
     validateStatus: (status) => (status >= 200 && status < 300) || status === 409,
@@ -329,11 +372,17 @@ export async function deleteAccount(accountId: number, confirmed = false): Promi
 }
 
 export async function listImportTemplates(accountId?: number): Promise<ImportTemplate[]> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.listImportTemplates(accountId);
+  }
   const response = await api.get<ImportTemplate[]>("/import-templates", { params: accountId ? { account_id: accountId } : undefined });
   return response.data;
 }
 
 export async function createImportTemplate(payload: ImportTemplatePayload): Promise<ImportTemplate> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.createImportTemplate(payload);
+  }
   const response = await api.post<ImportTemplate>("/import-templates", payload);
   return response.data;
 }
@@ -342,40 +391,64 @@ export async function updateImportTemplate(
   templateId: number,
   payload: ImportTemplatePayload,
 ): Promise<ImportTemplate> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.updateImportTemplate(templateId, payload);
+  }
   const response = await api.put<ImportTemplate>(`/import-templates/${templateId}`, payload);
   return response.data;
 }
 
 export async function listLabels(): Promise<TransactionLabel[]> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.listLabels();
+  }
   const response = await api.get<TransactionLabel[]>("/labels");
   return response.data;
 }
 
 export async function createLabel(payload: TransactionLabelPayload): Promise<TransactionLabel> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.createLabel(payload);
+  }
   const response = await api.post<TransactionLabel>("/labels", payload);
   return response.data;
 }
 
 export async function listLabelRules(): Promise<LabelRule[]> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.listLabelRules();
+  }
   const response = await api.get<LabelRule[]>("/transaction-label-rules");
   return response.data;
 }
 
 export async function createLabelRule(payload: LabelRulePayload): Promise<LabelRule> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.createLabelRule(payload);
+  }
   const response = await api.post<LabelRule>("/transaction-label-rules", payload);
   return response.data;
 }
 
 export async function updateLabelRule(ruleId: number, payload: LabelRulePayload): Promise<LabelRule> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.updateLabelRule(ruleId, payload);
+  }
   const response = await api.put<LabelRule>(`/transaction-label-rules/${ruleId}`, payload);
   return response.data;
 }
 
 export async function deleteLabelRule(ruleId: number): Promise<void> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.deleteLabelRule(ruleId);
+  }
   await api.delete(`/transaction-label-rules/${ruleId}`);
 }
 
 export async function previewLabelRuleMatches(payload: LabelRulePayload, limit = 25): Promise<LabelRuleMatchPreview> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.previewLabelRuleMatches(payload, limit);
+  }
   const response = await api.get<LabelRuleMatchPreview>("/transaction-label-rules/matches", {
     params: {
       match_field: payload.match_field,
@@ -389,6 +462,9 @@ export async function previewLabelRuleMatches(payload: LabelRulePayload, limit =
 }
 
 export async function getDashboardSpendingByLabel(month: string, accountIds: number[] = []): Promise<DashboardSpendingByLabel> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.getDashboardSpendingByLabel(month, accountIds);
+  }
   const response = await api.get<DashboardSpendingByLabel>("/dashboard/spending-by-label", {
     params: { month, account_ids: accountIds },
     paramsSerializer: { indexes: null },
@@ -400,6 +476,9 @@ export async function getDashboardTransactions(
   month: string,
   filters: DashboardTransactionFilters = {},
 ): Promise<DashboardTransactionList> {
+  if (USE_DEMO_BACKEND) {
+    return demoBackend.getDashboardTransactions(month, filters);
+  }
   const response = await api.get<DashboardTransactionList>("/dashboard/transactions", {
     params: {
       month,

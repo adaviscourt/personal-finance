@@ -3,6 +3,7 @@
 - [x] 1.1 Verify the current frontend/backend build can run in Vercel demo deployment, or document the smallest required adapter if FastAPI cannot run directly there.
 - [x] 1.2 Add an explicit demo-mode configuration flag available to backend and frontend without changing normal local/container defaults.
 - [x] 1.3 Add demo-mode tests proving non-demo deployments keep existing import, persistence, and dashboard behavior.
+- [x] 1.4 Add a static frontend fake backend for `VITE_DEMO_MODE=true` so the public demo does not require a deployed API.
 
 ## 2. Seeded Demo Data
 
@@ -29,7 +30,7 @@
 
 ## 5. Vercel Deployment
 
-- [x] 5.1 Add Vercel project configuration or documented settings for build command, output/runtime behavior, and demo environment variables.
+- [x] 5.1 Add Vercel project configuration or documented settings for build command, static output behavior, and demo environment variables.
 - [x] 5.2 Document how to connect Vercel to this repo as a new project and point an existing-site subdomain at it.
 - [x] 5.3 Validate a Vercel preview or equivalent local production build starts in demo mode and shows seeded demo data.
 

@@ -30,12 +30,12 @@ Alternatives considered:
 - Separate demo app copy: rejected because it violates parity requirement.
 - Route-only detection: rejected because backend-side import and seed protections also need to know demo state.
 
-### Seed deterministic public demo data
+### Seed deterministic public demo data in backend and static frontend
 
-Demo mode should initialize or expose deterministic sample data: checking, savings, and credit card accounts; salary income near $100k annualized; rent, groceries, utilities, transit, insurance, fitness, subscriptions, dining, events, travel savings/spend, and hobby purchases; labels with controllability metadata; and enough history for dashboard filters/trends.
+Demo mode should initialize or expose deterministic sample data: checking, savings, and credit card accounts; salary income near $100k annualized; rent, groceries, utilities, transit, insurance, fitness, subscriptions, dining, events, travel savings/spend, and hobby purchases; labels with controllability metadata; and enough history for dashboard filters/trends. Backend demo mode seeds SQLite for container/API demos, while static Vercel demo builds use a slim in-browser fake backend that mirrors the same frontend API client contracts without deploying FastAPI.
 
 Alternatives considered:
-- Static frontend-only mock data: rejected because it bypasses backend/API parity.
+- Component-level mock data: rejected because it bypasses API-client parity. A client-level fake backend is acceptable for static public demo builds because it keeps app modules and API shapes shared while avoiding an API deployment.
 - Random generated data on each deploy: rejected because tests, screenshots, and demos become inconsistent.
 
 ### Prefer sample-file import over arbitrary upload in demo
@@ -46,17 +46,17 @@ Alternatives considered:
 - Allow arbitrary uploads but discard data: rejected because users may still provide private financial files to a public demo.
 - Hide import entirely: acceptable fallback only if sample-file flow is not built, but less representative.
 
-### Keep Vercel deployment lightweight
+### Keep Vercel deployment static
 
-Vercel configuration should point at the same repo and deploy a demo-compatible build without requiring a fork. Any serverless/runtime constraints should be handled through existing app architecture where feasible, plus documented environment variables and subdomain setup.
+Vercel configuration should point at the same repo and deploy a demo-compatible static build without requiring a fork, backend runtime, or serverless adapter. `VITE_DEMO_MODE=true` switches frontend API functions to the deterministic fake backend; normal builds keep using the configured FastAPI base URL.
 
 Alternatives considered:
-- Deploy only static frontend on Vercel with remote API elsewhere: rejected unless implementation discovers Vercel cannot run required backend behavior, because it increases operational complexity.
+- Deploy static frontend on Vercel with a remote API elsewhere: rejected because it creates operational complexity for a slim demo dataset.
 - Use existing container only: rejected because acceptance criteria explicitly requires Vercel project connection.
 
 ## Risks / Trade-offs
 
-- Vercel runtime may not match the current FastAPI/container serving model -> validate deployment constraints early and document any required adapter or API hosting decision.
+- Vercel runtime may not match the current FastAPI/container serving model -> static demo uses the frontend fake backend and avoids API hosting for public demo traffic.
 - Public demo writes could mutate shared data and make demos confusing -> reset demo data on startup/deploy or block non-sample destructive writes in demo mode.
 - Sample data could look unrealistic or too personal -> use synthetic merchants, round salary assumptions, and generic labels only.
 - Demo-only branches in UI can grow over time -> isolate demo decisions in config/state adapters and keep component/API contracts unchanged.
@@ -67,8 +67,8 @@ Alternatives considered:
 No user data migration is required. Implementation should add demo configuration and seed data without changing existing production defaults.
 
 Deployment steps:
-- Add Vercel project configuration and required demo environment variables.
-- Deploy preview from the feature branch and verify the public subdomain loads seeded demo data.
+- Add Vercel project configuration and required frontend demo environment variables.
+- Deploy preview from the feature branch and verify the public subdomain loads seeded demo data without an API origin.
 - Confirm local/container deployments continue using normal import and persistence behavior when demo mode is disabled.
 
 Rollback strategy:
@@ -77,6 +77,6 @@ Rollback strategy:
 
 ## Open Questions
 
-- Can the current FastAPI backend run acceptably in Vercel for demo purposes, or is a small deployment adapter needed?
+- Should the fake backend eventually support curated sample imports, or keep imports disabled for public safety?
 - Should demo writes reset per deployment, per session, or be read-only except for sample import flow?
 - Which existing subdomain will point at the Vercel project?

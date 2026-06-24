@@ -57,16 +57,15 @@ docker compose down -v
 
 ## Public Demo Mode
 
-Enable demo mode with `DEMO_MODE=true`. Optional `DEMO_DEFAULT_MONTH=2026-06` controls the dashboard's default seeded month. Frontend builds can mirror this with `VITE_DEMO_MODE=true` and `VITE_DEMO_DEFAULT_MONTH=2026-06`.
+Enable backend demo mode with `DEMO_MODE=true`. Optional `DEMO_DEFAULT_MONTH=2026-06` controls the dashboard's default seeded month. Static frontend demo builds can use `VITE_DEMO_MODE=true` and `VITE_DEMO_DEFAULT_MONTH=2026-06` to serve a deterministic in-browser fake backend, so the public demo does not require a deployed API.
 
-Demo mode seeds deterministic synthetic checking, savings, and credit-card data and blocks CSV upload endpoints before raw rows are stored. Normal local, Docker, and Unraid behavior remains unchanged when `DEMO_MODE` is unset.
+Demo mode seeds deterministic synthetic checking, savings, and credit-card data and blocks CSV upload endpoints before raw rows are stored. The frontend fake backend mirrors the same API response shapes with slim seeded data for Vercel-only demos. Normal local, Docker, and Unraid behavior remains unchanged when demo flags are unset.
 
 Vercel setup for a static demo frontend:
 
 - Create a new Vercel project from this repo and use `vercel.json` defaults.
-- Set frontend env vars: `VITE_DEMO_MODE=true`, `VITE_DEMO_DEFAULT_MONTH=2026-06`, and `VITE_API_BASE_URL` set to the public HTTPS origin where the demo FastAPI backend is reachable. For example, use `https://demo-api.example.com` when the backend is deployed on a separate host, or omit `VITE_API_BASE_URL` only when the frontend and API are served from the same origin/proxy path. Do not include endpoint paths like `/health`.
-- Set backend env vars on that API runtime too: `DEMO_MODE=true` and, if needed, `DEMO_DEFAULT_MONTH=2026-06`.
-- If running the FastAPI backend on Vercel is required, add a small ASGI serverless adapter under an `api/` entrypoint; the current backend is container-oriented, so the smallest supported first deployment is Vercel frontend plus demo-mode API URL.
+- Set frontend env vars: `VITE_DEMO_MODE=true` and `VITE_DEMO_DEFAULT_MONTH=2026-06`.
+- Leave `VITE_API_BASE_URL` unset for the static public demo. When `VITE_DEMO_MODE=true`, frontend API calls use the in-browser fake backend and do not require FastAPI hosting.
 - Add the desired subdomain in Vercel project domains, then point the existing-site DNS record to Vercel as instructed by the dashboard.
 
 ## MVP Workflow
