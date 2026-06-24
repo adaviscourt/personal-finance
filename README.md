@@ -64,7 +64,8 @@ Demo mode seeds deterministic synthetic checking, savings, and credit-card data 
 Vercel setup for a static demo frontend:
 
 - Create a new Vercel project from this repo and use `vercel.json` defaults.
-- Set env vars: `VITE_DEMO_MODE=true`, `VITE_DEMO_DEFAULT_MONTH=2026-06`, and `VITE_API_BASE_URL` pointing to the demo API runtime.
+- Set frontend env vars: `VITE_DEMO_MODE=true`, `VITE_DEMO_DEFAULT_MONTH=2026-06`, and `VITE_API_BASE_URL` set to the public HTTPS origin where the demo FastAPI backend is reachable. For example, use `https://demo-api.example.com` when the backend is deployed on a separate host, or omit `VITE_API_BASE_URL` only when the frontend and API are served from the same origin/proxy path. Do not include endpoint paths like `/health`.
+- Set backend env vars on that API runtime too: `DEMO_MODE=true` and, if needed, `DEMO_DEFAULT_MONTH=2026-06`.
 - If running the FastAPI backend on Vercel is required, add a small ASGI serverless adapter under an `api/` entrypoint; the current backend is container-oriented, so the smallest supported first deployment is Vercel frontend plus demo-mode API URL.
 - Add the desired subdomain in Vercel project domains, then point the existing-site DNS record to Vercel as instructed by the dashboard.
 
