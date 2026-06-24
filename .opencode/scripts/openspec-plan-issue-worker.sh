@@ -159,6 +159,7 @@ Run unattended but self-enforce these rules:
 EOF
 )"
 
+METRICS_FILE="$STATE_DIR/agent-loop-metrics-plan-issue-${ISSUE_NUMBER}-$(date +%Y%m%d%H%M%S).json"
 RUN_ARGS=(run --dir "$WORKTREE" --title "openspec-plan-issue-${ISSUE_NUMBER}" --dangerously-skip-permissions)
 if [[ -n "${OPENCODE_MODEL:-}" ]]; then
   RUN_ARGS+=(--model "$OPENCODE_MODEL")
@@ -170,6 +171,9 @@ if [[ -n "${OPENCODE_RUN_FLAGS:-}" ]]; then
 fi
 
 set +e
+OPENCODE_AGENT_LOOP_METRICS_FILE="$METRICS_FILE" \
+OPENCODE_AGENT_LOOP_PHASE="planning" \
+OPENCODE_AGENT_LOOP_BRANCH="$BRANCH" \
 opencode "${RUN_ARGS[@]}" "$PROMPT"
 OPENCODE_RC=$?
 set -e
@@ -184,6 +188,7 @@ if [[ -n "$PR_JSON" ]]; then
   PR_NUMBER="$(printf '%s' "$PR_JSON" | jq -r '.number')"
   gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=openspec-review-ready" >/dev/null 2>&1 || true
   gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=agent-feedback-ready" >/dev/null 2>&1 || true
+  .opencode/scripts/openspec-post-agent-loop-metrics.sh "$PR_NUMBER" "$METRICS_FILE" || true
 fi
 
 gh issue edit "$ISSUE_NUMBER" --remove-label openspec-planning >/dev/null 2>&1 || true

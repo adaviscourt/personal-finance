@@ -226,6 +226,7 @@ Run unattended but self-enforce these rules:
 EOF
 )"
 
+METRICS_FILE="$STATE_DIR/agent-loop-metrics-feedback-pr-${PR_NUMBER}-$(date +%Y%m%d%H%M%S).json"
 RUN_ARGS=(run --dir "$WORKTREE" --title "openspec-feedback-pr-${PR_NUMBER}" --dangerously-skip-permissions)
 if [[ -n "${OPENCODE_MODEL:-}" ]]; then
   RUN_ARGS+=(--model "$OPENCODE_MODEL")
@@ -237,6 +238,10 @@ if [[ -n "${OPENCODE_RUN_FLAGS:-}" ]]; then
 fi
 
 set +e
+OPENCODE_AGENT_LOOP_METRICS_FILE="$METRICS_FILE" \
+OPENCODE_AGENT_LOOP_PHASE="feedback" \
+OPENCODE_AGENT_LOOP_PR="$PR_NUMBER" \
+OPENCODE_AGENT_LOOP_BRANCH="$BRANCH" \
 opencode "${RUN_ARGS[@]}" "$PROMPT"
 OPENCODE_RC=$?
 set -e
@@ -258,5 +263,6 @@ sort -u "$PROCESSED_FILE" -o "$PROCESSED_FILE"
 
 gh issue edit "$PR_NUMBER" --remove-label openspec-implementing >/dev/null 2>&1 || true
 gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=agent-done" >/dev/null 2>&1 || true
+.opencode/scripts/openspec-post-agent-loop-metrics.sh "$PR_NUMBER" "$METRICS_FILE" || true
 
 printf 'Processed %s feedback for PR #%s.\n' "$FEEDBACK_TRIGGER" "$PR_NUMBER"

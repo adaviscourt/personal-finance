@@ -146,6 +146,7 @@ ${ISSUE_NUMBER:+- After implementation is complete, PR body should include "Clos
 EOF
 )"
 
+METRICS_FILE="$STATE_DIR/agent-loop-metrics-apply-pr-${PR_NUMBER}-$(date +%Y%m%d%H%M%S).json"
 RUN_ARGS=(run --dir "$WORKTREE" --title "openspec-apply-pr-${PR_NUMBER}" --dangerously-skip-permissions)
 if [[ -n "${OPENCODE_MODEL:-}" ]]; then
   RUN_ARGS+=(--model "$OPENCODE_MODEL")
@@ -157,6 +158,10 @@ if [[ -n "${OPENCODE_RUN_FLAGS:-}" ]]; then
 fi
 
 set +e
+OPENCODE_AGENT_LOOP_METRICS_FILE="$METRICS_FILE" \
+OPENCODE_AGENT_LOOP_PHASE="implementation" \
+OPENCODE_AGENT_LOOP_PR="$PR_NUMBER" \
+OPENCODE_AGENT_LOOP_BRANCH="$BRANCH" \
 opencode "${RUN_ARGS[@]}" "$PROMPT"
 OPENCODE_RC=$?
 set -e
@@ -180,5 +185,6 @@ gh issue edit "$PR_NUMBER" --remove-label openspec-apply-ready >/dev/null 2>&1 |
 gh issue edit "$PR_NUMBER" --remove-label openspec-implementing >/dev/null 2>&1 || true
 gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=agent-feedback-ready" >/dev/null 2>&1 || true
 gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=agent-done" >/dev/null 2>&1 || true
+.opencode/scripts/openspec-post-agent-loop-metrics.sh "$PR_NUMBER" "$METRICS_FILE" || true
 
 printf 'OpenSpec implementation complete for PR #%s.\n' "$PR_NUMBER"
