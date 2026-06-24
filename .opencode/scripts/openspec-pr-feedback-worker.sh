@@ -144,9 +144,9 @@ REVIEW_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBA
 
 NEW_KEYS="$(
   {
-    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "issue-comment:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$ISSUE_COMMENTS_JSON"
-    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "inline-comment:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$INLINE_COMMENTS_JSON"
-    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "review:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$REVIEWS_JSON"
+    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "issue-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$ISSUE_COMMENTS_JSON"
+    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "inline-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$INLINE_COMMENTS_JSON"
+    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "review:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$REVIEWS_JSON"
   } | sort -u
 )"
 

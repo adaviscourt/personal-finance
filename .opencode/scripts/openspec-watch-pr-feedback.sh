@@ -15,6 +15,7 @@ Environment:
   FEEDBACK_TRIGGER  Optional comment prefix. Defaults to /opencode.
   WORKER            Optional worker script path.
   DEBOUNCE_SECONDS  Optional quiet period before processing. Defaults to 300.
+  PR_LOCK_STALE_SECONDS Optional stale PR lock age. Defaults to 300.
 USAGE
 }
 
@@ -59,7 +60,15 @@ if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
 fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-REPO_NAME="$(basename "$REPO_ROOT")"
+GIT_COMMON_DIR="$(git rev-parse --git-common-dir)"
+if [[ "$GIT_COMMON_DIR" != /* ]]; then
+  GIT_COMMON_DIR="$REPO_ROOT/$GIT_COMMON_DIR"
+fi
+if [[ "$(basename "$GIT_COMMON_DIR")" == ".git" ]]; then
+  REPO_NAME="$(basename "$(dirname "$GIT_COMMON_DIR")")"
+else
+  REPO_NAME="$(basename "$REPO_ROOT")"
+fi
 STATE_DIR="${STATE_DIR:-$HOME/.opencode/state/$REPO_NAME}"
 LOCK_DIR="$STATE_DIR/openspec-feedback-watch.lock.d"
 LOG_FILE="$STATE_DIR/openspec-feedback-watch.log"
@@ -67,6 +76,7 @@ PR_LABEL="${PR_LABEL:-agent-feedback-ready}"
 FEEDBACK_TRIGGER="${FEEDBACK_TRIGGER:-/opencode}"
 WORKER="${WORKER:-$REPO_ROOT/.opencode/scripts/openspec-pr-feedback-worker.sh}"
 DEBOUNCE_SECONDS="${DEBOUNCE_SECONDS:-300}"
+PR_LOCK_STALE_SECONDS="${PR_LOCK_STALE_SECONDS:-300}"
 mkdir -p "$STATE_DIR"
 
 iso_to_epoch() {
@@ -86,9 +96,9 @@ has_unprocessed_feedback() {
 
   count="$(
     {
-      jq -r --argjson done "$processed_json" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "issue-comment:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$issue_json"
-      jq -r --argjson done "$processed_json" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "inline-comment:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$inline_json"
-      jq -r --argjson done "$processed_json" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "review:" + (.id|tostring) | select(($done | index(.)) | not)' <<< "$reviews_json"
+      jq -r --argjson done "$processed_json" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "issue-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$issue_json"
+      jq -r --argjson done "$processed_json" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "inline-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$inline_json"
+      jq -r --argjson done "$processed_json" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "review:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$reviews_json"
     } | sed '/^$/d' | wc -l | tr -d ' '
   )"
   [[ "$count" -gt 0 ]] || return 1
@@ -110,6 +120,35 @@ has_unprocessed_feedback() {
     return 1
   fi
   return 0
+}
+
+lock_age_seconds() {
+  local path="$1" mtime now
+  mtime="$(stat -f %m "$path" 2>/dev/null || stat -c %Y "$path" 2>/dev/null || echo 0)"
+  now="$(date +%s)"
+  echo "$((now - mtime))"
+}
+
+pr_lock_is_stale() {
+  local pr_number="$1" pr_lock="$2" pid age
+  age="$(lock_age_seconds "$pr_lock")"
+  pid="$(cat "$pr_lock/pid" 2>/dev/null || true)"
+
+  if [[ -z "$pid" ]]; then
+    (( age >= PR_LOCK_STALE_SECONDS ))
+    return
+  fi
+
+  if kill -0 "$pid" 2>/dev/null; then
+    return 1
+  fi
+
+  if (( age >= PR_LOCK_STALE_SECONDS )); then
+    printf '[%s] clearing stale feedback PR #%s lock from pid %s\n' "$(date)" "$pr_number" "$pid" >> "$LOG_FILE"
+    return 0
+  fi
+
+  return 1
 }
 
 tick() {
@@ -154,7 +193,13 @@ tick() {
   while IFS='|' read -r pr_number pr_title; do
     [[ -z "$pr_number" ]] && continue
     local pr_lock="$STATE_DIR/pr-${pr_number}-feedback.lock.d"
-    [[ -d "$pr_lock" ]] && continue
+    if [[ -d "$pr_lock" ]]; then
+      if pr_lock_is_stale "$pr_number" "$pr_lock"; then
+        rm -rf "$pr_lock"
+      else
+        continue
+      fi
+    fi
     has_unprocessed_feedback "$pr_number" || continue
     mkdir "$pr_lock" 2>/dev/null || continue
 
@@ -167,16 +212,16 @@ tell application "iTerm2"
     create tab with default profile
     tell current session
       set name to "openspec-feedback-${pr_number}"
-      write text "cd \"$REPO_ROOT\" && trap 'rmdir \"$pr_lock\" 2>/dev/null || true' EXIT && \"$WORKER\" $pr_number"
+      write text "cd \"$REPO_ROOT\" && printf '%s\\n' \$\$ > \"$pr_lock/pid\" && STATE_DIR=\"$STATE_DIR\" \"$WORKER\" $pr_number; rc=\$?; rm -rf \"$pr_lock\" 2>/dev/null || true; exit \$rc"
     end tell
   end tell
 end tell
 OSA
         printf '[%s] iTerm spawn failed for PR #%s; running worker in background\n' "$(date)" "$pr_number" >> "$LOG_FILE"
-        (cd "$REPO_ROOT" && trap 'rmdir "$pr_lock" 2>/dev/null || true' EXIT && "$WORKER" "$pr_number" >> "$LOG_FILE" 2>&1 &)
+        (cd "$REPO_ROOT" && printf '%s\n' "$BASHPID" > "$pr_lock/pid" && trap 'rm -rf "$pr_lock" 2>/dev/null || true' EXIT && STATE_DIR="$STATE_DIR" "$WORKER" "$pr_number" >> "$LOG_FILE" 2>&1) &
       }
     else
-      (cd "$REPO_ROOT" && trap 'rmdir "$pr_lock" 2>/dev/null || true' EXIT && "$WORKER" "$pr_number" >> "$LOG_FILE" 2>&1 &)
+      (cd "$REPO_ROOT" && printf '%s\n' "$BASHPID" > "$pr_lock/pid" && trap 'rm -rf "$pr_lock" 2>/dev/null || true' EXIT && STATE_DIR="$STATE_DIR" "$WORKER" "$pr_number" >> "$LOG_FILE" 2>&1) &
     fi
   done <<< "$prs"
 }
