@@ -118,8 +118,8 @@ PROCESSED_JSON="$(jq -R -s 'split("\n") | map(select(length > 0))' "$PROCESSED_F
 ISSUE_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '
   [.[]
     | select((.body // "") | startswith($trigger))
-    | .key = ("issue-comment:" + (.id|tostring))
-    | select(($done | index(.key)) | not)
+    | ("issue-comment:" + (.id|tostring)) as $key
+    | select(($done | index($key)) | not)
     | "### [PR comment] id=\(.id) @\(.user.login) at \(.created_at):\n\(.body)"
   ] | join("\n\n---\n\n")
 ' <<< "$ISSUE_COMMENTS_JSON")"
@@ -127,8 +127,8 @@ ISSUE_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBAC
 INLINE_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '
   [.[]
     | select((.body // "") | startswith($trigger))
-    | .key = ("inline-comment:" + (.id|tostring))
-    | select(($done | index(.key)) | not)
+    | ("inline-comment:" + (.id|tostring)) as $key
+    | select(($done | index($key)) | not)
     | "### [inline review comment] id=\(.id) @\(.user.login) at \(.created_at) -- \(.path):\(.line // .original_line // "?"):\n\(.body)"
   ] | join("\n\n---\n\n")
 ' <<< "$INLINE_COMMENTS_JSON")"
@@ -136,8 +136,8 @@ INLINE_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBA
 REVIEW_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '
   [.[]
     | select((.body // "") | startswith($trigger))
-    | .key = ("review:" + (.id|tostring))
-    | select(($done | index(.key)) | not)
+    | ("review:" + (.id|tostring)) as $key
+    | select(($done | index($key)) | not)
     | "### [review summary] id=\(.id) @\(.user.login) at \(.submitted_at) -- \(.state):\n\(.body)"
   ] | join("\n\n---\n\n")
 ' <<< "$REVIEWS_JSON")"
