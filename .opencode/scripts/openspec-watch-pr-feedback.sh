@@ -80,6 +80,16 @@ DEBOUNCE_SECONDS="${DEBOUNCE_SECONDS:-300}"
 PR_LOCK_STALE_SECONDS="${PR_LOCK_STALE_SECONDS:-300}"
 mkdir -p "$STATE_DIR"
 
+env_prefix() {
+  local out="" var
+  for var in "$@"; do
+    if [[ -n "${!var+x}" ]]; then
+      printf -v out '%s%s=%q ' "$out" "$var" "${!var}"
+    fi
+  done
+  printf '%s' "$out"
+}
+
 iso_to_epoch() {
   date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$1" +%s 2>/dev/null \
     || date -u -d "$1" +%s 2>/dev/null \
@@ -168,7 +178,7 @@ tick() {
   printf '%s\n' "$$" > "$LOCK_DIR/pid"
   trap 'rm -rf "$LOCK_DIR" 2>/dev/null' RETURN
 
-  local use_osascript prs
+  local use_osascript prs worker_env
   use_osascript=0
   if command -v osascript >/dev/null 2>&1 && /usr/bin/osascript -e 'id of application "iTerm2"' >/dev/null 2>&1; then
     use_osascript=1
@@ -177,6 +187,8 @@ tick() {
       use_osascript=0
     fi
   fi
+
+  worker_env="$(env_prefix GH_TOKEN AGENT_GIT_NAME AGENT_GIT_EMAIL OPENCODE_MODEL OPENCODE_RUN_FLAGS STATE_DIR PR_LOCK_STALE_SECONDS DEBOUNCE_SECONDS FEEDBACK_TRIGGER PR_LABEL)"
 
   cd "$REPO_ROOT"
   gh label create "$PR_LABEL" --description "PR feedback may be handled by opencode" --color D4C5F9 >/dev/null 2>&1 || true
@@ -213,7 +225,7 @@ tell application "iTerm2"
     create tab with default profile
     tell current session
       set name to "openspec-feedback-${pr_number}"
-      write text "cd \"$REPO_ROOT\" && printf '%s\\n' \$\$ > \"$pr_lock/pid\" && STATE_DIR=\"$STATE_DIR\" \"$WORKER\" $pr_number; rc=\$?; rm -rf \"$pr_lock\" 2>/dev/null || true; exit \$rc"
+      write text "cd \"$REPO_ROOT\" && printf '%s\\n' \$\$ > \"$pr_lock/pid\" && ${worker_env}\"$WORKER\" $pr_number; rc=\$?; rm -rf \"$pr_lock\" 2>/dev/null || true; exit \$rc"
     end tell
   end tell
 end tell

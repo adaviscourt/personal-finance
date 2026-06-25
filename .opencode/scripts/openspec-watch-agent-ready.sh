@@ -72,6 +72,16 @@ WORKER="${WORKER:-$REPO_ROOT/.opencode/scripts/openspec-agent-ready-worker.sh}"
 
 mkdir -p "$STATE_DIR"
 
+env_prefix() {
+  local out="" var
+  for var in "$@"; do
+    if [[ -n "${!var+x}" ]]; then
+      printf -v out '%s%s=%q ' "$out" "$var" "${!var}"
+    fi
+  done
+  printf '%s' "$out"
+}
+
 tick() {
   if ! mkdir "$LOCK_DIR" 2>/dev/null; then
     local lock_pid
@@ -91,7 +101,7 @@ tick() {
   printf '%s\n' "$$" > "$LOCK_DIR/pid"
   trap 'rm -rf "$LOCK_DIR" 2>/dev/null' RETURN
 
-  local use_osascript
+  local use_osascript worker_env
   use_osascript=0
   if command -v osascript >/dev/null 2>&1 && /usr/bin/osascript -e 'id of application "iTerm2"' >/dev/null 2>&1; then
     use_osascript=1
@@ -100,6 +110,8 @@ tick() {
       use_osascript=0
     fi
   fi
+
+  worker_env="$(env_prefix GH_TOKEN AGENT_GIT_NAME AGENT_GIT_EMAIL OPENCODE_MODEL OPENCODE_RUN_FLAGS STATE_DIR ASSIGNEE)"
 
   cd "$REPO_ROOT"
   gh label create "$ISSUE_LABEL" --description "Ready for local opencode agent pickup" --color 5319E7 >/dev/null 2>&1 || true
@@ -127,7 +139,7 @@ tell application "iTerm2"
     create tab with default profile
     tell current session
       set name to "openspec-issue-${issue_number}"
-      write text "cd \"$REPO_ROOT\" && \"$WORKER\" $issue_number"
+      write text "cd \"$REPO_ROOT\" && ${worker_env}\"$WORKER\" $issue_number"
     end tell
   end tell
 end tell
