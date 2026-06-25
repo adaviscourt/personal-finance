@@ -11,6 +11,9 @@ opencode unattended to implement the change in that same PR.
 
 Environment:
   WORKTREE_BASE       Optional parent directory for worktrees. Defaults to ../<repo-name>-worktrees.
+  GH_TOKEN            Optional bot/machine token; determines GitHub PR/comment/label actor.
+  AGENT_GIT_NAME      Optional git user.name configured in the implementation worktree.
+  AGENT_GIT_EMAIL     Optional git user.email configured in the implementation worktree.
   OPENCODE_MODEL      Optional model override, e.g. openai/gpt-5.5.
   OPENCODE_RUN_FLAGS  Optional extra flags passed to opencode run.
 USAGE
@@ -31,6 +34,15 @@ abs_path() {
 ensure_label() {
   local name="$1" color="$2" description="$3"
   gh label create "$name" --color "$color" --description "$description" >/dev/null 2>&1 || true
+}
+
+configure_git_identity() {
+  if [[ -n "${AGENT_GIT_NAME:-}" ]]; then
+    git config user.name "$AGENT_GIT_NAME"
+  fi
+  if [[ -n "${AGENT_GIT_EMAIL:-}" ]]; then
+    git config user.email "$AGENT_GIT_EMAIL"
+  fi
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || -z "${1:-}" ]]; then
@@ -104,6 +116,7 @@ else
 fi
 
 cd "$WORKTREE"
+configure_git_identity
 git fetch origin "$DEFAULT_BRANCH" --quiet
 
 CHANGE_NAME="$(git diff --name-only "origin/$DEFAULT_BRANCH"...HEAD | sed -nE 's#^openspec/changes/([^/]+)/.*#\1#p' | sort -u | head -n 1)"

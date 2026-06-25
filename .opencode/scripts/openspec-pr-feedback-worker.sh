@@ -13,6 +13,9 @@ branch, then marks feedback IDs processed after a successful push.
 Environment:
   WORKTREE_BASE       Optional parent directory for worktrees. Defaults to ../<repo-name>-worktrees.
   FEEDBACK_TRIGGER    Optional comment prefix. Defaults to /opencode.
+  GH_TOKEN            Optional bot/machine token; determines GitHub comment/reaction actor.
+  AGENT_GIT_NAME      Optional git user.name configured in the feedback worktree.
+  AGENT_GIT_EMAIL     Optional git user.email configured in the feedback worktree.
   OPENCODE_MODEL      Optional model override, e.g. openai/gpt-5.5.
   OPENCODE_RUN_FLAGS  Optional extra flags passed to opencode run.
 USAGE
@@ -35,6 +38,15 @@ ensure_label() {
   gh label create "$name" --color "$color" --description "$description" >/dev/null 2>&1 || true
 }
 
+configure_git_identity() {
+  if [[ -n "${AGENT_GIT_NAME:-}" ]]; then
+    git config user.name "$AGENT_GIT_NAME"
+  fi
+  if [[ -n "${AGENT_GIT_EMAIL:-}" ]]; then
+    git config user.email "$AGENT_GIT_EMAIL"
+  fi
+}
+
 react_issue_comment() {
   local id="$1" content="$2"
   gh api "repos/:owner/:repo/issues/comments/${id}/reactions" \
@@ -49,6 +61,57 @@ react_review_comment() {
     --method POST \
     -H "Accept: application/vnd.github+json" \
     -f "content=${content}" >/dev/null 2>&1 || true
+}
+
+post_feedback_reply() {
+  local summary_file="$1" summary keys_json body
+  if [[ -s "$summary_file" ]]; then
+    summary="$(<"$summary_file")"
+  else
+    summary="Done. Changes pushed."
+  fi
+
+  keys_json="$(printf '%s\n' "$NEW_KEYS" | jq -R -s 'split("\n") | map(select(length > 0))')"
+  body="$(jq -n -r \
+    --argjson issue "$ISSUE_COMMENTS_JSON" \
+    --argjson inline "$INLINE_COMMENTS_JSON" \
+    --argjson reviews "$REVIEWS_JSON" \
+    --argjson keys "$keys_json" \
+    --arg trigger "$FEEDBACK_TRIGGER" \
+    --arg summary "$summary" '
+      def clean:
+        ltrimstr($trigger)
+        | split($trigger) | join("agent trigger")
+        | gsub("^[ \\t\\r\\n]+"; "")
+        | if length == 0 then "(empty after trigger)" else . end;
+      def quote: split("\n") | map("> " + .) | join("\n");
+      def entry($kind; $meta): "**" + $kind + " " + $meta + "**\n" + ((.body // "") | clean | quote);
+      (
+        [ $reviews[]
+          | ("review:" + (.id|tostring)) as $key
+          | select($keys | index($key))
+          | entry("review", "@\(.user.login) at \(.submitted_at)")
+        ] +
+        [ $inline[]
+          | ("inline-comment:" + (.id|tostring)) as $key
+          | select($keys | index($key))
+          | entry("inline", "@\(.user.login) at \(.created_at) -- \(.path):\(.line // .original_line // "?")")
+        ] +
+        [ $issue[]
+          | ("issue-comment:" + (.id|tostring)) as $key
+          | select($keys | index($key))
+          | entry("comment", "@\(.user.login) at \(.created_at)")
+        ]
+      ) as $items
+      | "### Agent reply\n\n" +
+        "**Handled feedback**\n\n" +
+        (if ($items | length) == 0 then "_none listed_" else ($items | join("\n\n")) end) +
+        "\n\n**Summary**\n" +
+        ($summary | split($trigger) | join("agent trigger")) +
+        "\n\n**Status**\nDone. Branch pushed."
+    ')"
+
+  gh pr comment "$PR_NUMBER" --body "$body" >/dev/null
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || -z "${1:-}" ]]; then
@@ -178,6 +241,7 @@ else
 fi
 
 cd "$WORKTREE"
+configure_git_identity
 
 CHANGE_NAME="$(git diff --name-only "origin/$DEFAULT_BRANCH"...HEAD | sed -nE 's#^openspec/changes/([^/]+)/.*#\1#p' | sort -u | head -n 1)"
 if [[ -z "$CHANGE_NAME" ]]; then
@@ -185,6 +249,9 @@ if [[ -z "$CHANGE_NAME" ]]; then
 fi
 
 gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=openspec-implementing" >/dev/null 2>&1 || true
+
+SUMMARY_FILE="$STATE_DIR/pr-${PR_NUMBER}-feedback-summary.md"
+: > "$SUMMARY_FILE"
 
 PROMPT="$(cat <<EOF
 Address new human feedback on PR #${PR_NUMBER} in the same PR branch.
@@ -216,11 +283,12 @@ Run unattended but self-enforce these rules:
 - Work only in this worktree: ${WORKTREE}
 - Read the full feedback above before editing.
 - If feedback requests a code/spec/task change and it fits current PR scope, implement it.
-- If feedback requests a scope change, update OpenSpec artifacts first when appropriate; otherwise explain why it is out of scope in a PR comment.
-- Do not silently defer work. If deferring, create or reference a tracking issue and explain in a PR comment.
+- If feedback requests a scope change, update OpenSpec artifacts first when appropriate; otherwise explain why it is out of scope in the summary file.
+- Do not silently defer work. If deferring, create or reference a tracking issue and explain in the summary file.
 - Run relevant verification and openspec status if ${CHANGE_NAME:-an OpenSpec change} is present.
 - Use the ship skill to commit, push, and update this same PR branch.
-- Reply on PR #${PR_NUMBER} with a concise summary of what changed and any deferred items.
+- Do not post PR comments or review replies yourself; this worker posts the deterministic completion reply.
+- Write a very short caveman-style summary to ${SUMMARY_FILE}. Include changed files/tests/deferred items only. Do not include ${FEEDBACK_TRIGGER} anywhere in that summary.
 - Keep label agent-feedback-ready on the PR.
 - Do not archive the OpenSpec change.
 EOF
@@ -250,6 +318,8 @@ if [[ "$OPENCODE_RC" -ne 0 ]]; then
   gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=agent-blocked" >/dev/null 2>&1 || true
   exit "$OPENCODE_RC"
 fi
+
+post_feedback_reply "$SUMMARY_FILE"
 
 while IFS= read -r key; do
   [[ -z "$key" ]] && continue

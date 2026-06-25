@@ -13,6 +13,7 @@ Environment:
   STATE_DIR         Optional state/log dir. Defaults to ~/.opencode/state/<repo-name>.
   PR_LABEL          Optional watch label. Defaults to agent-feedback-ready.
   FEEDBACK_TRIGGER  Optional comment prefix. Defaults to /opencode.
+  GH_TOKEN          Optional bot/machine token; determines GitHub comment/reaction actor.
   WORKER            Optional worker script path.
   DEBOUNCE_SECONDS  Optional quiet period before processing. Defaults to 300.
   PR_LOCK_STALE_SECONDS Optional stale PR lock age. Defaults to 300.

@@ -81,7 +81,21 @@ Run specific workers manually:
 4. Add `openspec-apply-ready` to same PR when approved.
 5. Implementation worker updates same PR and changes linkage to `Closes #<issue>`.
 6. Add PR comments or review comments beginning with `/opencode` for follow-up changes.
-7. Feedback worker reacts with eyes, updates the same branch, then marks processed feedback in local state and reacts with `hooray` where GitHub supports reactions.
+7. Feedback worker reacts with eyes, updates the same branch, posts one templated completion reply, then marks processed feedback in local state and reacts with `hooray` where GitHub supports reactions.
+
+## Agent Identity
+
+- GitHub labels, comments, reactions, and PR edits are authored by the token used by `gh`. To avoid showing your personal account, run watchers/workers with a bot or machine-user token in `GH_TOKEN`.
+- GitHub does not let a personal token impersonate another user. Use a machine user PAT or GitHub App installation token if you want bot attribution.
+- Commits use git identity from the worktree. Set `AGENT_GIT_NAME` and `AGENT_GIT_EMAIL` before running workers to configure local `user.name` and `user.email` in generated worktrees.
+- Recommended local run:
+
+```bash
+GH_TOKEN="$AGENT_LOOP_BOT_TOKEN" \
+AGENT_GIT_NAME="agent-loop-bot" \
+AGENT_GIT_EMAIL="agent-loop-bot@example.com" \
+.opencode/scripts/openspec-agent-loop-watch.sh
+```
 
 ## State
 
@@ -115,6 +129,7 @@ Prefer the foreground supervisor while iterating because logs are centralized an
 - Raw issue is not closed until implementation is complete.
 - Feedback pickup requires explicit `/opencode` comment prefix.
 - Feedback de-dupe is based on processed GitHub comment/review IDs, not emoji state.
+- Feedback completion replies are posted by the worker, not the agent prompt, and must not include the trigger text.
 - No automatic merge.
 - Do not archive from local workers; existing GitHub archive workflow handles merge-to-main completion.
 
