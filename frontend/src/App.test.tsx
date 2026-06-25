@@ -424,7 +424,7 @@ describe("App", () => {
     expect(screen.getAllByText("Net activity").length).toBeGreaterThan(0);
     expect(screen.getByText("credits minus debits")).toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.textContent === "▲$1774.75")).toHaveClass("net-positive");
-    expect(screen.getByLabelText("June 2026: $1774.75")).toBeInTheDocument();
+    expect(screen.getByLabelText("Select June 2026: $1774.75")).toBeInTheDocument();
     expect((await screen.findAllByText("Groceries")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("$25.25").length).toBeGreaterThan(0);
     expect(screen.getByText("Total debit spending: $33.25")).toBeInTheDocument();
@@ -433,10 +433,11 @@ describe("App", () => {
     expect(within(screen.getAllByRole("row")[1]).getByText("Local Market")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Amount" }));
     expect(within(screen.getAllByRole("row")[1]).getByText("Payroll")).toBeInTheDocument();
-    expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), []);
+    expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), [], "both");
     expect(mockedGetDashboardTransactions).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), {
       accountIds: [],
       labelSlugs: [],
+      controllability: "both",
     });
   });
 
@@ -468,8 +469,8 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Month"), { target: { value: "2026-02" } });
 
     expect(await screen.findByText("No transactions available for 2026-02 and selected filters.")).toBeInTheDocument();
-    expect(mockedGetDashboardSpendingByLabel).toHaveBeenLastCalledWith("2026-02", []);
-    expect(mockedGetDashboardTransactions).toHaveBeenCalledWith("2026-02", { accountIds: [], labelSlugs: [] });
+    expect(mockedGetDashboardSpendingByLabel).toHaveBeenLastCalledWith("2026-02", [], "both");
+    expect(mockedGetDashboardTransactions).toHaveBeenCalledWith("2026-02", { accountIds: [], labelSlugs: [], controllability: "both" });
   });
 
   it("persists the selected dashboard month across page refreshes", async () => {
@@ -516,10 +517,134 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Checking Account" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Uncategorized" }));
 
-    expect(mockedGetDashboardSpendingByLabel).toHaveBeenLastCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), [42]);
+    expect(mockedGetDashboardSpendingByLabel).toHaveBeenLastCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), [42], "both");
     expect(mockedGetDashboardTransactions).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), {
       accountIds: [42],
       labelSlugs: ["dining"],
+      controllability: "both",
+    });
+  });
+
+  it("requests dashboard data with selected label controllability", async () => {
+    renderApp();
+
+    fireEvent.change(await screen.findByLabelText("Label controllability"), { target: { value: "controllable" } });
+
+    await waitFor(() => {
+      expect(mockedGetDashboardSpendingByLabel).toHaveBeenLastCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), [], "controllable");
+    });
+    expect(mockedGetDashboardTransactions).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), {
+      accountIds: [],
+      labelSlugs: [],
+      controllability: "controllable",
+    });
+  });
+
+  it("toggles all dashboard labels with contextual action text", async () => {
+    renderApp();
+
+    expect(await screen.findByRole("button", { name: "Deselect all labels" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Deselect all labels" }));
+
+    expect(screen.getByRole("button", { name: "Select all labels" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Uncategorized" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Dining" })).not.toBeChecked();
+    await waitFor(() => {
+      expect(mockedGetDashboardTransactions).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), {
+        accountIds: [],
+        labelSlugs: [],
+        controllability: "both",
+      });
+    });
+  });
+
+  it("shows hidden label rows greyed out while summaries exclude them", async () => {
+    mockedGetDashboardSpendingByLabel.mockResolvedValue({
+      month: "2026-01",
+      labels: [
+        { label_slug: "dining", label_name: "Dining", amount: "8.00" },
+        { label_slug: "groceries", label_name: "Groceries", amount: "25.00" },
+      ],
+    });
+    mockedGetDashboardTransactions.mockResolvedValue({
+      month: "2026-01",
+      transactions: [
+        {
+          id: 8,
+          transaction_date: "2026-01-04",
+          account: { id: 1, name: "Checking Account" },
+          description: "Cafe",
+          merchant: null,
+          label: { id: 2, slug: "dining", name: "Dining", is_controllable: true },
+          direction: "debit",
+          amount: "8.00",
+          source_type: null,
+          source_category: null,
+          check_number: null,
+        },
+        {
+          id: 9,
+          transaction_date: "2026-01-05",
+          account: { id: 1, name: "Checking Account" },
+          description: "Market",
+          merchant: null,
+          label: { id: 3, slug: "groceries", name: "Groceries", is_controllable: true },
+          direction: "debit",
+          amount: "25.00",
+          source_type: null,
+          source_category: null,
+          check_number: null,
+        },
+      ],
+    });
+
+    renderApp();
+
+    expect(await screen.findByText("Cafe")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Uncategorized" }));
+    fireEvent.click(screen.getByLabelText("Show hidden label rows"));
+
+    expect(await screen.findByText("Market")).toBeInTheDocument();
+    expect(screen.getByText("Hidden by label filter")).toBeInTheDocument();
+    expect(screen.getByText("2 row(s), 1 hidden")).toBeInTheDocument();
+    expect(screen.getByText("1 debit row(s)")).toBeInTheDocument();
+    expect(screen.queryByText("$33.00")).not.toBeInTheDocument();
+    expect(screen.getByText("Total debit spending: $8.00")).toBeInTheDocument();
+  });
+
+  it("updates selected month from a net activity point", async () => {
+    mockedGetDashboardSpendingByLabel.mockResolvedValue({
+      month: "2026-06",
+      labels: [{ label_slug: "dining", label_name: "Dining", amount: "8.00" }],
+    });
+    mockedGetDashboardTransactions.mockResolvedValue({
+      month: "2026-06",
+      transactions: [{
+        id: 8,
+        transaction_date: "2026-06-04",
+        account: { id: 1, name: "Checking Account" },
+        description: "Cafe",
+        merchant: null,
+        label: { id: 2, slug: "dining", name: "Dining", is_controllable: true },
+        direction: "debit",
+        amount: "8.00",
+        source_type: null,
+        source_category: null,
+        check_number: null,
+      }],
+    });
+    renderApp();
+
+    const initialMonth = (await screen.findByLabelText("Month") as HTMLInputElement).value;
+    fireEvent.click((await screen.findAllByLabelText(/Select .*: -?\$8.00/))[0]);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Month")).not.toHaveValue(initialMonth);
+    });
+    expect(mockedGetDashboardTransactions).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), {
+      accountIds: [],
+      labelSlugs: [],
+      controllability: "both",
     });
   });
 
@@ -985,8 +1110,8 @@ describe("App", () => {
 
     expect(await screen.findByText("Rule saved. Applied to 2 existing transactions.")).toBeInTheDocument();
     expect(mockedCreateLabelRule).toHaveBeenCalledWith({ label_id: 8, match_field: "description", match_type: "regex", pattern: "Bistro" });
-    expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), []);
-    expect(mockedGetDashboardTransactions).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), { accountIds: [], labelSlugs: [] });
+    expect(mockedGetDashboardSpendingByLabel).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), [], "both");
+    expect(mockedGetDashboardTransactions).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/), { accountIds: [], labelSlugs: [], controllability: "both" });
   });
 
   it("edits and deletes label rules", async () => {
@@ -1127,7 +1252,7 @@ describe("App", () => {
     expect(await screen.findByText("Monthly transaction review")).toBeInTheDocument();
     expect(screen.getByLabelText("Month")).toHaveValue("2026-03");
     await waitFor(() => {
-      expect(mockedGetDashboardTransactions).toHaveBeenCalledWith("2026-03", { accountIds: [42], labelSlugs: [] });
+      expect(mockedGetDashboardTransactions).toHaveBeenCalledWith("2026-03", { accountIds: [42], labelSlugs: [], controllability: "both" });
     });
   });
 

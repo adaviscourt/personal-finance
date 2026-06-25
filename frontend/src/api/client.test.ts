@@ -46,6 +46,7 @@ describe("api client", () => {
       accountIds: [1],
       labelIds: [2],
       labelSlugs: ["groceries"],
+      controllability: "controllable",
     });
 
     expect(mockGet).toHaveBeenCalledWith("/dashboard/transactions", {
@@ -54,6 +55,7 @@ describe("api client", () => {
         account_ids: [1],
         label_ids: [2],
         label_slugs: ["groceries"],
+        controllability: "controllable",
       },
       paramsSerializer: { indexes: null },
     });

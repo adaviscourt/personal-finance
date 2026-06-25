@@ -4,6 +4,7 @@ import type {
   AppConfig,
   ConfirmImportResponse,
   CsvPreviewResponse,
+  DashboardControllabilityFilter,
   DashboardSpendingByLabel,
   DashboardTransactionFilters,
   DashboardTransactionList,
@@ -242,13 +243,23 @@ export const demoBackend = {
       }));
     return Promise.resolve({ total_count: rows.length, returned_count: rows.length, rows });
   },
-  getDashboardSpendingByLabel(month: string, accountIds: number[] = []): Promise<DashboardSpendingByLabel> {
+  getDashboardSpendingByLabel(
+    month: string,
+    accountIds: number[] = [],
+    controllability: DashboardControllabilityFilter = "both",
+  ): Promise<DashboardSpendingByLabel> {
     const totals = new Map<string, { label_name: string; amount: number }>();
     for (const transaction of transactions) {
       if (transaction.transaction_date.slice(0, 7) !== month || transaction.direction !== "debit") {
         continue;
       }
       if (accountIds.length > 0 && !accountIds.includes(transaction.account.id)) {
+        continue;
+      }
+      if (controllability === "controllable" && !transaction.label.is_controllable) {
+        continue;
+      }
+      if (controllability === "non-controllable" && transaction.label.is_controllable) {
         continue;
       }
       const current = totals.get(transaction.label.slug) ?? { label_name: transaction.label.name, amount: 0 };
@@ -270,6 +281,12 @@ export const demoBackend = {
         return false;
       }
       if (filters.labelSlugs?.length && !filters.labelSlugs.includes(transaction.label.slug)) {
+        return false;
+      }
+      if (filters.controllability === "controllable" && !transaction.label.is_controllable) {
+        return false;
+      }
+      if (filters.controllability === "non-controllable" && transaction.label.is_controllable) {
         return false;
       }
       return true;

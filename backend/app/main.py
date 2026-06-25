@@ -1154,6 +1154,7 @@ def create_label(payload: LabelPayload) -> LabelResponse:
 def get_dashboard_spending_by_label(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     account_ids: list[int] = Query(default=[]),
+    controllability: Literal["both", "controllable", "non-controllable"] = "both",
 ) -> DashboardSpendingByLabelResponse:
     with Session(engine) as session:
         uncategorized = get_uncategorized_label(session)
@@ -1168,6 +1169,10 @@ def get_dashboard_spending_by_label(
         )
         if account_ids:
             statement = statement.where(col(Transaction.account_id).in_(account_ids))
+        if controllability == "controllable":
+            statement = statement.where(func.coalesce(Label.is_controllable, uncategorized.is_controllable).is_(True))
+        if controllability == "non-controllable":
+            statement = statement.where(func.coalesce(Label.is_controllable, uncategorized.is_controllable).is_(False))
         rows = session.exec(statement).all()
 
     labels = [
@@ -1188,6 +1193,7 @@ def get_dashboard_transactions(
     account_ids: list[int] = Query(default=[]),
     label_ids: list[int] = Query(default=[]),
     label_slugs: list[str] = Query(default=[]),
+    controllability: Literal["both", "controllable", "non-controllable"] = "both",
 ) -> DashboardTransactionListResponse:
     with Session(engine) as session:
         uncategorized = get_uncategorized_label(session)
@@ -1210,6 +1216,10 @@ def get_dashboard_transactions(
             if uncategorized.slug in label_slugs:
                 label_slug_filter_clauses.append(col(Transaction.label_id).is_(None))
             statement = statement.where(or_(*label_slug_filter_clauses))
+        if controllability == "controllable":
+            statement = statement.where(func.coalesce(Label.is_controllable, uncategorized.is_controllable).is_(True))
+        if controllability == "non-controllable":
+            statement = statement.where(func.coalesce(Label.is_controllable, uncategorized.is_controllable).is_(False))
         rows = session.exec(statement).all()
 
     return DashboardTransactionListResponse(
