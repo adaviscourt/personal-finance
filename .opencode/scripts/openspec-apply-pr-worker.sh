@@ -198,6 +198,6 @@ gh issue edit "$PR_NUMBER" --remove-label openspec-apply-ready >/dev/null 2>&1 |
 gh issue edit "$PR_NUMBER" --remove-label openspec-implementing >/dev/null 2>&1 || true
 gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=agent-feedback-ready" >/dev/null 2>&1 || true
 gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=agent-done" >/dev/null 2>&1 || true
-.opencode/scripts/openspec-post-agent-loop-metrics.sh "$PR_NUMBER" "$METRICS_FILE" || true
+  "$REPO_ROOT/.opencode/scripts/openspec-post-agent-loop-metrics.sh" "$PR_NUMBER" "$METRICS_FILE" || true
 
 printf 'OpenSpec implementation complete for PR #%s.\n' "$PR_NUMBER"

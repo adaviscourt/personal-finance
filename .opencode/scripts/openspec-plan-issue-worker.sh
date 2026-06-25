@@ -204,7 +204,7 @@ if [[ -n "$PR_JSON" ]]; then
   PR_NUMBER="$(printf '%s' "$PR_JSON" | jq -r '.number')"
   gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=openspec-review-ready" >/dev/null 2>&1 || true
   gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=agent-feedback-ready" >/dev/null 2>&1 || true
-  .opencode/scripts/openspec-post-agent-loop-metrics.sh "$PR_NUMBER" "$METRICS_FILE" || true
+  "$REPO_ROOT/.opencode/scripts/openspec-post-agent-loop-metrics.sh" "$PR_NUMBER" "$METRICS_FILE" || true
 fi
 
 gh issue edit "$ISSUE_NUMBER" --remove-label openspec-planning >/dev/null 2>&1 || true
