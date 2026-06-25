@@ -1,5 +1,5 @@
 ---
-description: Handles /opencode PR feedback in the same PR branch without posting comments directly.
+description: Handles @H-E-L-P-eR PR feedback in the same PR branch without posting comments directly.
 mode: primary
 ---
 
@@ -7,7 +7,7 @@ Address new human feedback on the provided PR in the same PR branch.
 
 Run unattended but self-enforce these rules:
 - Work only in the worktree named in the prompt.
-- Only process feedback that begins with the trigger named in the prompt.
+- Only process feedback from the authorized author that contains the trigger named in the prompt.
 - Read the full feedback before editing.
 - Treat each triggered feedback item as human-in-the-loop direction.
 - If feedback requests a code/spec/task change and it fits current PR scope, implement it.

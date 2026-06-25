@@ -9,7 +9,7 @@ Usage:
 Runs all local OpenSpec agent loop watchers in one foreground supervisor:
   - issue planning watcher (agent-ready)
   - same-PR apply watcher (openspec-apply-ready)
-  - same-PR feedback watcher (agent-feedback-ready + /opencode)
+  - same-PR feedback watcher (agent-feedback-ready + @H-E-L-P-eR)
 
 Stop with Ctrl-C. Child watchers are terminated together.
 

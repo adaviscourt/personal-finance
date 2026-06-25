@@ -6,13 +6,14 @@ usage() {
 Usage:
   .opencode/scripts/openspec-pr-feedback-worker.sh <pr-number>
 
-Handles unprocessed PR feedback beginning with /opencode on an agent-managed PR.
+Handles unprocessed PR feedback mentioning @H-E-L-P-eR on an agent-managed PR.
 The worker reacts with eyes when picked up, runs opencode against the same PR
 branch, then marks feedback IDs processed after a successful push.
 
 Environment:
   WORKTREE_BASE       Optional parent directory for worktrees/clones.
-  FEEDBACK_TRIGGER    Optional comment prefix. Defaults to /opencode.
+  FEEDBACK_TRIGGER    Optional comment mention/text. Defaults to @H-E-L-P-eR.
+  FEEDBACK_AUTHOR     Optional GitHub login allowed to trigger feedback. Defaults to current gh user.
   GH_TOKEN            Optional bot/machine token; determines GitHub comment/reaction actor.
   AGENT_GIT_NAME      Optional git user.name configured in the feedback worktree.
   AGENT_GIT_EMAIL     Optional git user.email configured in the feedback worktree.
@@ -147,8 +148,7 @@ post_feedback_reply() {
     --arg trigger "$FEEDBACK_TRIGGER" \
     --arg summary "$summary" '
       def clean:
-        ltrimstr($trigger)
-        | split($trigger) | join("agent trigger")
+        split($trigger) | join("agent trigger")
         | gsub("^[ \\t\\r\\n]+"; "")
         | if length == 0 then "(empty after trigger)" else . end;
       def quote: split("\n") | map("> " + .) | join("\n");
@@ -232,7 +232,13 @@ if [[ -z "${WORKTREE_BASE+x}" ]]; then
 fi
 STATE_DIR="${STATE_DIR:-$HOME/.opencode/state/$REPO_NAME}"
 PROCESSED_FILE="$STATE_DIR/pr-${PR_NUMBER}-opencode-feedback-processed.txt"
-FEEDBACK_TRIGGER="${FEEDBACK_TRIGGER:-/opencode}"
+FEEDBACK_TRIGGER="${FEEDBACK_TRIGGER:-@H-E-L-P-eR}"
+FEEDBACK_AUTHOR="${FEEDBACK_AUTHOR:-}"
+if [[ -n "$FEEDBACK_AUTHOR" ]]; then
+  FEEDBACK_AUTHOR="${FEEDBACK_AUTHOR#@}"
+else
+  FEEDBACK_AUTHOR="$(gh api user --jq '.login')"
+fi
 mkdir -p "$WORKTREE_BASE" "$STATE_DIR"
 touch "$PROCESSED_FILE"
 
@@ -258,27 +264,30 @@ REVIEWS_JSON="$(gh api "repos/:owner/:repo/pulls/${PR_NUMBER}/reviews?per_page=1
 
 PROCESSED_JSON="$(jq -R -s 'split("\n") | map(select(length > 0))' "$PROCESSED_FILE")"
 
-ISSUE_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '
+ISSUE_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" --arg author "$FEEDBACK_AUTHOR" '
   [.[]
-    | select((.body // "") | startswith($trigger))
+    | select(.user.login == $author)
+    | select((.body // "") | contains($trigger))
     | ("issue-comment:" + (.id|tostring)) as $key
     | select(($done | index($key)) | not)
     | "### [PR comment] id=\(.id) @\(.user.login) at \(.created_at):\n\(.body)"
   ] | join("\n\n---\n\n")
 ' <<< "$ISSUE_COMMENTS_JSON")"
 
-INLINE_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '
+INLINE_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" --arg author "$FEEDBACK_AUTHOR" '
   [.[]
-    | select((.body // "") | startswith($trigger))
+    | select(.user.login == $author)
+    | select((.body // "") | contains($trigger))
     | ("inline-comment:" + (.id|tostring)) as $key
     | select(($done | index($key)) | not)
     | "### [inline review comment] id=\(.id) @\(.user.login) at \(.created_at) -- \(.path):\(.line // .original_line // "?"):\n\(.body)"
   ] | join("\n\n---\n\n")
 ' <<< "$INLINE_COMMENTS_JSON")"
 
-REVIEW_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '
+REVIEW_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" --arg author "$FEEDBACK_AUTHOR" '
   [.[]
-    | select((.body // "") | startswith($trigger))
+    | select(.user.login == $author)
+    | select((.body // "") | contains($trigger))
     | ("review:" + (.id|tostring)) as $key
     | select(($done | index($key)) | not)
     | "### [review summary] id=\(.id) @\(.user.login) at \(.submitted_at) -- \(.state):\n\(.body)"
@@ -287,9 +296,9 @@ REVIEW_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBA
 
 NEW_KEYS="$(
   {
-    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "issue-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$ISSUE_COMMENTS_JSON"
-    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "inline-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$INLINE_COMMENTS_JSON"
-    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" '.[] | select((.body // "") | startswith($trigger)) | "review:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$REVIEWS_JSON"
+    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" --arg author "$FEEDBACK_AUTHOR" '.[] | select(.user.login == $author) | select((.body // "") | contains($trigger)) | "issue-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$ISSUE_COMMENTS_JSON"
+    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" --arg author "$FEEDBACK_AUTHOR" '.[] | select(.user.login == $author) | select((.body // "") | contains($trigger)) | "inline-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$INLINE_COMMENTS_JSON"
+    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" --arg author "$FEEDBACK_AUTHOR" '.[] | select(.user.login == $author) | select((.body // "") | contains($trigger)) | "review:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$REVIEWS_JSON"
   } | sort -u
 )"
 
@@ -334,6 +343,7 @@ Branch: ${BRANCH}
 Worktree: ${WORKTREE}
 ${CHANGE_NAME:+OpenSpec change: ${CHANGE_NAME}}
 Feedback trigger: ${FEEDBACK_TRIGGER}
+Authorized feedback author: ${FEEDBACK_AUTHOR}
 Summary file: ${SUMMARY_FILE}
 
 UNPROCESSED REVIEW SUMMARIES:

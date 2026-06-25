@@ -9,7 +9,7 @@ Usage:
 Runs one local OpenSpec agent loop tick:
   1. raw issue planning pickup (agent-ready)
   2. same-PR implementation pickup (openspec-apply-ready)
-  3. same-PR /opencode feedback pickup (agent-feedback-ready)
+  3. same-PR @H-E-L-P-eR feedback pickup (agent-feedback-ready)
 
 Environment:
   STATE_DIR            Optional state/log dir. Defaults to ~/.opencode/state/<repo-name>.
