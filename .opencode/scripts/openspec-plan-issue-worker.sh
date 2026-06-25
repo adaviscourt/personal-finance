@@ -144,11 +144,12 @@ gh issue edit "$ISSUE_NUMBER" --remove-label agent-ready >/dev/null 2>&1 || true
 gh issue edit "$ISSUE_NUMBER" --add-label openspec-planning >/dev/null
 
 PROMPT="$(cat <<EOF
-Use the openspec-ff-change skill to create OpenSpec artifacts from GitHub issue #${ISSUE_NUMBER}.
+Create OpenSpec artifacts from GitHub issue #${ISSUE_NUMBER}.
 
 Issue: ${ISSUE_TITLE}
 URL: ${ISSUE_URL}
 Suggested change name: ${CHANGE_NAME}
+Planning worktree: ${WORKTREE}
 
 Issue body:
 ---
@@ -159,24 +160,11 @@ Issue comments:
 ---
 ${ISSUE_COMMENTS}
 ---
-
-Run unattended but self-enforce these rules:
-- Work only in this planning worktree: ${WORKTREE}
-- Create OpenSpec artifacts for change name ${CHANGE_NAME} unless a better kebab-case name is clearly required by the issue.
-- Use openspec-ff-change so proposal, specs, design, and tasks are created to apply-ready state.
-- Do not implement application code in this planning phase except generated OpenSpec artifacts and minimal issue/PR metadata edits.
-- Run OpenSpec validation/status checks after creating artifacts.
-- Use the ship skill to commit, push, and open a PR from this same branch.
-- PR title should make clear this is OpenSpec planning.
-- PR body must include "Refs #${ISSUE_NUMBER}" and must NOT include "Closes #${ISSUE_NUMBER}" yet.
-- PR body must explain that adding label openspec-apply-ready to this PR authorizes implementation in the same PR.
-- Add PR label openspec-review-ready if possible.
-- If blocked or scope is unclear, stop and report. Do not invent broad implementation scope.
 EOF
 )"
 
 METRICS_FILE="$STATE_DIR/agent-loop-metrics-plan-issue-${ISSUE_NUMBER}-$(date +%Y%m%d%H%M%S).json"
-RUN_ARGS=(run --dir "$WORKTREE" --title "openspec-plan-issue-${ISSUE_NUMBER}" --dangerously-skip-permissions)
+RUN_ARGS=(run --dir "$WORKTREE" --agent openspec-planner --title "openspec-plan-issue-${ISSUE_NUMBER}" --dangerously-skip-permissions)
 if [[ -n "${OPENCODE_MODEL:-}" ]]; then
   RUN_ARGS+=(--model "$OPENCODE_MODEL")
 fi

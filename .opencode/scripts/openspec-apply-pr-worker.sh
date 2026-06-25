@@ -134,7 +134,7 @@ ISSUE_NUMBER="$(printf '%s' "$PR_BODY" | sed -nE 's/.*(Refs|Closes)[[:space:]]+#
 gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=openspec-implementing" >/dev/null 2>&1 || true
 
 PROMPT="$(cat <<EOF
-Use the openspec-apply-change skill to implement OpenSpec change ${CHANGE_NAME} in this same PR branch.
+Implement OpenSpec change ${CHANGE_NAME} in this same PR branch.
 
 PR: ${PR_TITLE}
 URL: ${PR_URL}
@@ -142,25 +142,11 @@ PR number: #${PR_NUMBER}
 Branch: ${BRANCH}
 Worktree: ${WORKTREE}
 ${ISSUE_NUMBER:+Original issue: #${ISSUE_NUMBER}}
-
-Run unattended but self-enforce these rules:
-- Work only in this worktree: ${WORKTREE}
-- Read proposal.md, design.md, tasks.md, and relevant specs for ${CHANGE_NAME} before editing application code.
-- Confirm artifacts are coherent and apply-ready before implementation.
-- Implement the tasks in openspec/changes/${CHANGE_NAME}/tasks.md.
-- Keep scope to the approved OpenSpec artifacts. If implementation reveals scope change, stop and report instead of silently expanding.
-- Mark completed tasks in tasks.md.
-- Run relevant verification and openspec status for ${CHANGE_NAME}.
-- Use the ship skill to commit, push, and update this same PR branch.
-- PR body must mention OpenSpec change ${CHANGE_NAME} and exact tasks completed.
-${ISSUE_NUMBER:+- After implementation is complete, PR body should include "Closes #${ISSUE_NUMBER}".}
-- Keep label agent-feedback-ready on the PR so /opencode feedback can be handled.
-- Do not archive the OpenSpec change.
 EOF
 )"
 
 METRICS_FILE="$STATE_DIR/agent-loop-metrics-apply-pr-${PR_NUMBER}-$(date +%Y%m%d%H%M%S).json"
-RUN_ARGS=(run --dir "$WORKTREE" --title "openspec-apply-pr-${PR_NUMBER}" --dangerously-skip-permissions)
+RUN_ARGS=(run --dir "$WORKTREE" --agent openspec-implementer --title "openspec-apply-pr-${PR_NUMBER}" --dangerously-skip-permissions)
 if [[ -n "${OPENCODE_MODEL:-}" ]]; then
   RUN_ARGS+=(--model "$OPENCODE_MODEL")
 fi

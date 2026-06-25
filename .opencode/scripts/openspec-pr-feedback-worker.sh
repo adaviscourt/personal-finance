@@ -261,8 +261,8 @@ URL: ${PR_URL}
 Branch: ${BRANCH}
 Worktree: ${WORKTREE}
 ${CHANGE_NAME:+OpenSpec change: ${CHANGE_NAME}}
-
-Only process feedback that begins with ${FEEDBACK_TRIGGER}. Treat each item below as human-in-the-loop direction.
+Feedback trigger: ${FEEDBACK_TRIGGER}
+Summary file: ${SUMMARY_FILE}
 
 UNPROCESSED REVIEW SUMMARIES:
 ---
@@ -278,24 +278,11 @@ UNPROCESSED PR COMMENTS:
 ---
 ${ISSUE_FEEDBACK:-(none)}
 ---
-
-Run unattended but self-enforce these rules:
-- Work only in this worktree: ${WORKTREE}
-- Read the full feedback above before editing.
-- If feedback requests a code/spec/task change and it fits current PR scope, implement it.
-- If feedback requests a scope change, update OpenSpec artifacts first when appropriate; otherwise explain why it is out of scope in the summary file.
-- Do not silently defer work. If deferring, create or reference a tracking issue and explain in the summary file.
-- Run relevant verification and openspec status if ${CHANGE_NAME:-an OpenSpec change} is present.
-- Use the ship skill to commit, push, and update this same PR branch.
-- Do not post PR comments or review replies yourself; this worker posts the deterministic completion reply.
-- Write a very short caveman-style summary to ${SUMMARY_FILE}. Include changed files/tests/deferred items only. Do not include ${FEEDBACK_TRIGGER} anywhere in that summary.
-- Keep label agent-feedback-ready on the PR.
-- Do not archive the OpenSpec change.
 EOF
 )"
 
 METRICS_FILE="$STATE_DIR/agent-loop-metrics-feedback-pr-${PR_NUMBER}-$(date +%Y%m%d%H%M%S).json"
-RUN_ARGS=(run --dir "$WORKTREE" --title "openspec-feedback-pr-${PR_NUMBER}" --dangerously-skip-permissions)
+RUN_ARGS=(run --dir "$WORKTREE" --agent openspec-feedback --title "openspec-feedback-pr-${PR_NUMBER}" --dangerously-skip-permissions)
 if [[ -n "${OPENCODE_MODEL:-}" ]]; then
   RUN_ARGS+=(--model "$OPENCODE_MODEL")
 fi
