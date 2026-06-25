@@ -10,10 +10,11 @@ Creates or reuses a planning worktree for one raw GitHub issue, then runs
 opencode unattended to create OpenSpec artifacts and open a same-PR planning PR.
 
 Environment:
-  WORKTREE_BASE       Optional parent directory for worktrees. Defaults to ../<repo-name>-worktrees.
+  WORKTREE_BASE       Optional parent directory for worktrees/clones.
   GH_TOKEN            Optional bot/machine token; determines GitHub PR/comment/label actor.
   AGENT_GIT_NAME      Optional git user.name configured in the planning worktree.
   AGENT_GIT_EMAIL     Optional git user.email configured in the planning worktree.
+  AGENT_LOOP_SANDBOX  Optional sandbox mode. Set to docker to run opencode via Docker sbx.
   OPENCODE_MODEL      Optional model override, e.g. openai/gpt-5.5.
   OPENCODE_RUN_FLAGS  Optional extra flags passed to opencode run.
 USAGE
@@ -49,6 +50,71 @@ configure_git_identity() {
   fi
 }
 
+use_docker_sandbox() {
+  [[ "${AGENT_LOOP_SANDBOX:-}" == "docker" ]]
+}
+
+prepare_checkout() {
+  local branch="$1" default_branch="$2" source_ref="$3"
+
+  if use_docker_sandbox; then
+    local remote_url checkout_ref
+    remote_url="$(git config --get remote.origin.url)"
+    if [[ -z "$remote_url" ]]; then
+      echo "remote.origin.url is required for AGENT_LOOP_SANDBOX=docker." >&2
+      exit 1
+    fi
+
+    if [[ -e "$WORKTREE" && ! -d "$WORKTREE/.git" ]]; then
+      echo "Docker sandbox mode requires a standalone clone, but $WORKTREE already exists and is not one." >&2
+      exit 1
+    fi
+
+    if [[ ! -d "$WORKTREE/.git" ]]; then
+      git clone --quiet "$remote_url" "$WORKTREE"
+    else
+      echo "Reusing existing clone: $WORKTREE"
+    fi
+
+    (
+      cd "$WORKTREE"
+      git fetch origin "$default_branch" --quiet
+      git fetch origin "$branch" --quiet 2>/dev/null || true
+      checkout_ref="origin/$default_branch"
+      if [[ "$source_ref" == "head" ]] && git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+        checkout_ref="origin/$branch"
+      fi
+      git checkout -B "$branch" "$checkout_ref" --quiet
+    )
+  elif [[ ! -d "$WORKTREE" ]]; then
+    if git show-ref --verify --quiet "refs/heads/$branch"; then
+      git worktree add "$WORKTREE" "$branch"
+    else
+      git worktree add -b "$branch" "$WORKTREE" "origin/$default_branch"
+    fi
+  else
+    echo "Reusing existing worktree: $WORKTREE"
+  fi
+}
+
+run_opencode() {
+  if use_docker_sandbox; then
+    local sandbox_name kit_path
+    if ! command -v sbx >/dev/null 2>&1; then
+      echo "sbx is required when AGENT_LOOP_SANDBOX=docker." >&2
+      return 1
+    fi
+    sandbox_name="openspec-plan-${ISSUE_NUMBER}-$(date +%Y%m%d%H%M%S)"
+    kit_path="$REPO_ROOT/.opencode/sandbox-kits/agent-loop"
+    sbx run opencode --name "$sandbox_name" --kit "$kit_path" "$WORKTREE" "$STATE_DIR" -- "${RUN_ARGS[@]}" "$PROMPT"
+  else
+    OPENCODE_AGENT_LOOP_METRICS_FILE="$METRICS_FILE" \
+    OPENCODE_AGENT_LOOP_PHASE="planning" \
+    OPENCODE_AGENT_LOOP_BRANCH="$BRANCH" \
+    opencode "${RUN_ARGS[@]}" "$PROMPT"
+  fi
+}
+
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || -z "${1:-}" ]]; then
   usage
   exit 1
@@ -56,7 +122,14 @@ fi
 
 ISSUE_NUMBER="${1#\#}"
 
-for cmd in gh git jq opencode; do
+REQUIRED_CMDS=(gh git jq)
+if use_docker_sandbox; then
+  REQUIRED_CMDS+=(sbx)
+else
+  REQUIRED_CMDS+=(opencode)
+fi
+
+for cmd in "${REQUIRED_CMDS[@]}"; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "$cmd is required and was not found." >&2
     exit 1
@@ -84,7 +157,13 @@ fi
 cd "$REPO_ROOT"
 
 REPO_NAME="$(basename "$REPO_ROOT")"
-WORKTREE_BASE="${WORKTREE_BASE:-$(dirname "$REPO_ROOT")/${REPO_NAME}-worktrees}"
+if [[ -z "${WORKTREE_BASE+x}" ]]; then
+  if use_docker_sandbox; then
+    WORKTREE_BASE="$(dirname "$REPO_ROOT")/${REPO_NAME}-sandbox-clones"
+  else
+    WORKTREE_BASE="$(dirname "$REPO_ROOT")/${REPO_NAME}-worktrees"
+  fi
+fi
 STATE_DIR="${STATE_DIR:-$HOME/.opencode/state/$REPO_NAME}"
 mkdir -p "$WORKTREE_BASE" "$STATE_DIR"
 
@@ -126,15 +205,7 @@ WORKTREE="$WORKTREE_BASE/$BRANCH"
 
 git fetch origin "$DEFAULT_BRANCH" --quiet
 
-if [[ ! -d "$WORKTREE" ]]; then
-  if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
-    git worktree add "$WORKTREE" "$BRANCH"
-  else
-    git worktree add -b "$BRANCH" "$WORKTREE" "origin/$DEFAULT_BRANCH"
-  fi
-else
-  echo "Reusing existing worktree: $WORKTREE"
-fi
+prepare_checkout "$BRANCH" "$DEFAULT_BRANCH" base
 
 cd "$WORKTREE"
 configure_git_identity
@@ -175,10 +246,7 @@ if [[ -n "${OPENCODE_RUN_FLAGS:-}" ]]; then
 fi
 
 set +e
-OPENCODE_AGENT_LOOP_METRICS_FILE="$METRICS_FILE" \
-OPENCODE_AGENT_LOOP_PHASE="planning" \
-OPENCODE_AGENT_LOOP_BRANCH="$BRANCH" \
-opencode "${RUN_ARGS[@]}" "$PROMPT"
+run_opencode
 OPENCODE_RC=$?
 set -e
 

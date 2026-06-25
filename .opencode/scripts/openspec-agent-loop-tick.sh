@@ -12,7 +12,8 @@ Runs one local OpenSpec agent loop tick:
   3. same-PR /opencode feedback pickup (agent-feedback-ready)
 
 Environment:
-  STATE_DIR  Optional state/log dir. Defaults to ~/.opencode/state/<repo-name>.
+  STATE_DIR            Optional state/log dir. Defaults to ~/.opencode/state/<repo-name>.
+  AGENT_LOOP_SANDBOX   Optional sandbox mode passed to watchers/workers. Set to docker.
 USAGE
 }
 

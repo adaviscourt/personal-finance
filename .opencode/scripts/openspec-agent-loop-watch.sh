@@ -14,7 +14,8 @@ Runs all local OpenSpec agent loop watchers in one foreground supervisor:
 Stop with Ctrl-C. Child watchers are terminated together.
 
 Environment:
-  STATE_DIR  Optional state/log dir. Defaults to ~/.opencode/state/<repo-name>.
+  STATE_DIR            Optional state/log dir. Defaults to ~/.opencode/state/<repo-name>.
+  AGENT_LOOP_SANDBOX   Optional sandbox mode passed to watchers/workers. Set to docker.
 USAGE
 }
 

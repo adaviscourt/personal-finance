@@ -12,6 +12,7 @@ with label agent-ready. For each match, spawns an OpenSpec planning worker.
 Environment:
   STATE_DIR    Optional state/log dir. Defaults to ~/.opencode/state/<repo-name>.
   ISSUE_LABEL  Optional ready label. Defaults to agent-ready.
+  AGENT_LOOP_SANDBOX Optional sandbox mode passed to workers. Set to docker.
   WORKER       Optional worker script path.
 USAGE
 }
@@ -44,7 +45,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for cmd in gh git jq opencode; do
+REQUIRED_CMDS=(gh git jq)
+if [[ "${AGENT_LOOP_SANDBOX:-}" == "docker" ]]; then
+  REQUIRED_CMDS+=(sbx)
+else
+  REQUIRED_CMDS+=(opencode)
+fi
+
+for cmd in "${REQUIRED_CMDS[@]}"; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "$cmd is required and was not found." >&2
     exit 1
@@ -101,7 +109,7 @@ tick() {
     fi
   fi
 
-  worker_env="$(env_prefix GH_TOKEN AGENT_GIT_NAME AGENT_GIT_EMAIL OPENCODE_MODEL OPENCODE_RUN_FLAGS STATE_DIR)"
+  worker_env="$(env_prefix GH_TOKEN AGENT_GIT_NAME AGENT_GIT_EMAIL AGENT_LOOP_SANDBOX OPENCODE_MODEL OPENCODE_RUN_FLAGS STATE_DIR)"
 
   cd "$REPO_ROOT"
   gh label create "$ISSUE_LABEL" --description "Ready for local opencode agent pickup" --color 5319E7 >/dev/null 2>&1 || true

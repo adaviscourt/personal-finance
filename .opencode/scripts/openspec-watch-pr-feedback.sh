@@ -14,6 +14,7 @@ Environment:
   PR_LABEL          Optional watch label. Defaults to agent-feedback-ready.
   FEEDBACK_TRIGGER  Optional comment prefix. Defaults to /opencode.
   GH_TOKEN          Optional bot/machine token; determines GitHub comment/reaction actor.
+  AGENT_LOOP_SANDBOX Optional sandbox mode passed to workers. Set to docker.
   WORKER            Optional worker script path.
   DEBOUNCE_SECONDS  Optional quiet period before processing. Defaults to 300.
   PR_LOCK_STALE_SECONDS Optional stale PR lock age. Defaults to 300.
@@ -48,7 +49,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for cmd in gh git jq opencode; do
+REQUIRED_CMDS=(gh git jq)
+if [[ "${AGENT_LOOP_SANDBOX:-}" == "docker" ]]; then
+  REQUIRED_CMDS+=(sbx)
+else
+  REQUIRED_CMDS+=(opencode)
+fi
+
+for cmd in "${REQUIRED_CMDS[@]}"; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "$cmd is required and was not found." >&2
     exit 1
@@ -188,7 +196,7 @@ tick() {
     fi
   fi
 
-  worker_env="$(env_prefix GH_TOKEN AGENT_GIT_NAME AGENT_GIT_EMAIL OPENCODE_MODEL OPENCODE_RUN_FLAGS STATE_DIR PR_LOCK_STALE_SECONDS DEBOUNCE_SECONDS FEEDBACK_TRIGGER PR_LABEL)"
+  worker_env="$(env_prefix GH_TOKEN AGENT_GIT_NAME AGENT_GIT_EMAIL AGENT_LOOP_SANDBOX OPENCODE_MODEL OPENCODE_RUN_FLAGS STATE_DIR PR_LOCK_STALE_SECONDS DEBOUNCE_SECONDS FEEDBACK_TRIGGER PR_LABEL)"
 
   cd "$REPO_ROOT"
   gh label create "$PR_LABEL" --description "PR feedback may be handled by opencode" --color D4C5F9 >/dev/null 2>&1 || true

@@ -118,8 +118,33 @@ Important files:
 - Foreground local dev: run `.opencode/scripts/openspec-agent-loop-watch.sh` in one iTerm tab.
 - Cron/launchd style: run `.opencode/scripts/openspec-agent-loop-tick.sh` every minute.
 - Manual debugging: run a specific watcher or worker directly.
+- Docker sandbox mode: set `AGENT_LOOP_SANDBOX=docker` before starting watchers or one-shot ticks.
 
 Prefer the foreground supervisor while iterating because logs are centralized and Ctrl-C stops all child watchers cleanly. Prefer launchd once the loop is stable and should survive terminal restarts.
+
+## Docker Sandbox Mode
+
+Docker sandbox mode runs worker OpenCode sessions through `sbx run opencode` with `.opencode/sandbox-kits/agent-loop`.
+
+Host setup:
+
+```bash
+brew install docker/tap/sbx
+sbx login
+gh auth token | sbx secret set -g github
+sbx secret set -g anthropic
+sbx secret set -g openai
+```
+
+OpenAI OAuth may work through Docker's Codex-compatible flow; try `sbx secret set -g openai --oauth`. If OpenCode does not pick it up through the sandbox proxy, use the API-key secret path above.
+
+Run watchers in sandbox mode:
+
+```bash
+AGENT_LOOP_SANDBOX=docker .opencode/scripts/openspec-agent-loop-watch.sh
+```
+
+In Docker mode, workers use standalone clones under `../<repo-name>-sandbox-clones` by default, not Git worktrees. This avoids `.git` pointer-file mounts that break inside sandboxes.
 
 ## Guardrails
 
