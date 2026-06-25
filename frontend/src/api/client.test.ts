@@ -13,11 +13,12 @@ vi.mock("axios", () => ({
   },
 }));
 
-import { getDashboardTransactions, listAccounts, listLabels } from "./client";
+import { getAppConfig, getDashboardTransactions, listAccounts, listLabels } from "./client";
 
 describe("api client", () => {
   beforeEach(() => {
     mockGet.mockReset();
+    vi.unstubAllEnvs();
   });
 
   it("requests dashboard transaction rows with month and optional filters", async () => {
@@ -70,5 +71,25 @@ describe("api client", () => {
 
     expect(mockGet).toHaveBeenNthCalledWith(1, "/accounts");
     expect(mockGet).toHaveBeenNthCalledWith(2, "/labels");
+  });
+
+  it("loads app config for demo mode", async () => {
+    mockGet.mockResolvedValue({ data: { demo_mode: true, demo_default_month: "2026-06" } });
+
+    await expect(getAppConfig()).resolves.toEqual({ demo_mode: true, demo_default_month: "2026-06" });
+
+    expect(mockGet).toHaveBeenCalledWith("/config");
+  });
+
+  it("serves demo data without network when demo build flag is enabled", async () => {
+    vi.stubEnv("VITE_DEMO_MODE", "true");
+    vi.resetModules();
+    const { getAppConfig: getDemoAppConfig, getDashboardTransactions: getDemoDashboardTransactions, listAccounts: listDemoAccounts } = await import("./client");
+
+    await expect(getDemoAppConfig()).resolves.toEqual({ demo_mode: true, demo_default_month: "2026-06" });
+    await expect(listDemoAccounts()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Demo Checking" })]));
+    await expect(getDemoDashboardTransactions("2026-06")).resolves.toEqual(expect.objectContaining({ transactions: expect.arrayContaining([expect.objectContaining({ description: "Demo Payroll Deposit" })]) }));
+
+    expect(mockGet).not.toHaveBeenCalled();
   });
 });
