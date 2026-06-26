@@ -1,0 +1,442 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  .opencode/scripts/openspec-pr-feedback-worker.sh <pr-number>
+
+Handles unprocessed PR feedback mentioning @H-E-L-P-eR on an agent-managed PR.
+The worker reacts with eyes when picked up, runs opencode against the same PR
+branch, then marks feedback IDs processed after a successful push.
+
+Environment:
+  WORKTREE_BASE       Optional parent directory for worktrees/clones.
+  FEEDBACK_TRIGGER    Optional comment mention/text. Defaults to @H-E-L-P-eR.
+  FEEDBACK_AUTHOR     Optional GitHub login allowed to trigger feedback. Defaults to current gh user.
+  GH_TOKEN            Optional bot/machine token; determines GitHub comment/reaction actor.
+  AGENT_GIT_NAME      Optional git user.name configured in the feedback worktree.
+  AGENT_GIT_EMAIL     Optional git user.email configured in the feedback worktree.
+  AGENT_LOOP_SANDBOX  Optional sandbox mode. Set to docker to run via Docker sbx.
+  AGENT_LOOP_SANDBOX_AGENT Optional sbx agent in docker mode. Defaults to codex; set opencode to restore old path.
+  OPENCODE_MODEL      Optional model override, e.g. openai/gpt-5.5.
+  OPENCODE_RUN_FLAGS  Optional extra flags passed to opencode run.
+  CODEX_MODEL         Optional Codex model override in docker mode.
+  CODEX_EXEC_FLAGS    Optional extra flags passed to codex exec in docker mode.
+USAGE
+}
+
+abs_path() {
+  local path="$1"
+  if [[ -d "$path" ]]; then
+    (cd "$path" && pwd -P)
+  else
+    local dir base
+    dir="$(dirname "$path")"
+    base="$(basename "$path")"
+    (cd "$dir" && printf '%s/%s\n' "$(pwd -P)" "$base")
+  fi
+}
+
+ensure_label() {
+  local name="$1" color="$2" description="$3"
+  gh label create "$name" --color "$color" --description "$description" >/dev/null 2>&1 || true
+}
+
+configure_git_identity() {
+  if [[ -n "${AGENT_GIT_NAME:-}" ]]; then
+    git config user.name "$AGENT_GIT_NAME"
+  fi
+  if [[ -n "${AGENT_GIT_EMAIL:-}" ]]; then
+    git config user.email "$AGENT_GIT_EMAIL"
+  fi
+}
+
+use_docker_sandbox() {
+  [[ "${AGENT_LOOP_SANDBOX:-}" == "docker" ]]
+}
+
+prepare_checkout() {
+  local branch="$1" default_branch="$2" source_ref="$3"
+
+  if use_docker_sandbox; then
+    local remote_url checkout_ref
+    remote_url="$(git config --get remote.origin.url)"
+    if [[ -z "$remote_url" ]]; then
+      echo "remote.origin.url is required for AGENT_LOOP_SANDBOX=docker." >&2
+      exit 1
+    fi
+
+    if [[ -e "$WORKTREE" && ! -d "$WORKTREE/.git" ]]; then
+      echo "Docker sandbox mode requires a standalone clone, but $WORKTREE already exists and is not one." >&2
+      exit 1
+    fi
+
+    if [[ ! -d "$WORKTREE/.git" ]]; then
+      git clone --quiet "$remote_url" "$WORKTREE"
+    else
+      echo "Reusing existing clone: $WORKTREE"
+    fi
+
+    (
+      cd "$WORKTREE"
+      git fetch origin "$default_branch" --quiet
+      git fetch origin "$branch" --quiet 2>/dev/null || true
+      checkout_ref="origin/$default_branch"
+      if [[ "$source_ref" == "head" ]] && git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+        checkout_ref="origin/$branch"
+      fi
+      git checkout -B "$branch" "$checkout_ref" --quiet
+    )
+  elif [[ ! -d "$WORKTREE" ]]; then
+    if git show-ref --verify --quiet "refs/heads/$branch"; then
+      git worktree add "$WORKTREE" "$branch"
+    else
+      git worktree add -b "$branch" "$WORKTREE" "origin/$default_branch"
+    fi
+  else
+    echo "Reusing existing worktree: $WORKTREE"
+  fi
+}
+
+run_agent() {
+  if use_docker_sandbox; then
+    local sandbox_name kit_path sandbox_agent
+    if ! command -v sbx >/dev/null 2>&1; then
+      echo "sbx is required when AGENT_LOOP_SANDBOX=docker." >&2
+      return 1
+    fi
+    sandbox_name="openspec-feedback-${PR_NUMBER}-$(date +%Y%m%d%H%M%S)"
+    kit_path="$REPO_ROOT/.opencode/sandbox-kits/agent-loop"
+    sandbox_agent="${AGENT_LOOP_SANDBOX_AGENT:-codex}"
+    case "$sandbox_agent" in
+      codex)
+        sbx run codex --name "$sandbox_name" --kit "$kit_path" "$WORKTREE" "$STATE_DIR" -- "${CODEX_RUN_ARGS[@]}" "$PROMPT"
+        ;;
+      opencode)
+        sbx run opencode --name "$sandbox_name" --kit "$kit_path" "$WORKTREE" "$STATE_DIR" -- "${RUN_ARGS[@]}" "$PROMPT"
+        ;;
+      *)
+        echo "Unsupported AGENT_LOOP_SANDBOX_AGENT: $sandbox_agent" >&2
+        return 1
+        ;;
+    esac
+  else
+    OPENCODE_AGENT_LOOP_METRICS_FILE="$METRICS_FILE" \
+    OPENCODE_AGENT_LOOP_PHASE="feedback" \
+    OPENCODE_AGENT_LOOP_PR="$PR_NUMBER" \
+    OPENCODE_AGENT_LOOP_BRANCH="$BRANCH" \
+    opencode "${RUN_ARGS[@]}" "$PROMPT"
+  fi
+}
+
+react_issue_comment() {
+  local id="$1" content="$2"
+  gh api "repos/:owner/:repo/issues/comments/${id}/reactions" \
+    --method POST \
+    -H "Accept: application/vnd.github+json" \
+    -f "content=${content}" >/dev/null 2>&1 || true
+}
+
+react_review_comment() {
+  local id="$1" content="$2"
+  gh api "repos/:owner/:repo/pulls/comments/${id}/reactions" \
+    --method POST \
+    -H "Accept: application/vnd.github+json" \
+    -f "content=${content}" >/dev/null 2>&1 || true
+}
+
+post_feedback_reply() {
+  local summary_file="$1" summary keys_json body
+  if [[ -s "$summary_file" ]]; then
+    summary="$(<"$summary_file")"
+  else
+    summary="Done. Changes pushed."
+  fi
+
+  keys_json="$(printf '%s\n' "$NEW_KEYS" | jq -R -s 'split("\n") | map(select(length > 0))')"
+  body="$(jq -n -r \
+    --argjson issue "$ISSUE_COMMENTS_JSON" \
+    --argjson inline "$INLINE_COMMENTS_JSON" \
+    --argjson reviews "$REVIEWS_JSON" \
+    --argjson keys "$keys_json" \
+    --arg trigger "$FEEDBACK_TRIGGER" \
+    --arg summary "$summary" '
+      def clean:
+        split($trigger) | join("agent trigger")
+        | gsub("^[ \\t\\r\\n]+"; "")
+        | if length == 0 then "(empty after trigger)" else . end;
+      def quote: split("\n") | map("> " + .) | join("\n");
+      def entry($kind; $meta): "**" + $kind + " " + $meta + "**\n" + ((.body // "") | clean | quote);
+      (
+        [ $reviews[]
+          | ("review:" + (.id|tostring)) as $key
+          | select($keys | index($key))
+          | entry("review", "@\(.user.login) at \(.submitted_at)")
+        ] +
+        [ $inline[]
+          | ("inline-comment:" + (.id|tostring)) as $key
+          | select($keys | index($key))
+          | entry("inline", "@\(.user.login) at \(.created_at) -- \(.path):\(.line // .original_line // "?")")
+        ] +
+        [ $issue[]
+          | ("issue-comment:" + (.id|tostring)) as $key
+          | select($keys | index($key))
+          | entry("comment", "@\(.user.login) at \(.created_at)")
+        ]
+      ) as $items
+      | "### Agent reply\n\n" +
+        "**Handled feedback**\n\n" +
+        (if ($items | length) == 0 then "_none listed_" else ($items | join("\n\n")) end) +
+        "\n\n**Summary**\n" +
+        ($summary | split($trigger) | join("agent trigger")) +
+        "\n\n**Status**\nDone. Branch pushed."
+    ')"
+
+  gh pr comment "$PR_NUMBER" --body "$body" >/dev/null
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || -z "${1:-}" ]]; then
+  usage
+  exit 1
+fi
+
+PR_NUMBER="${1#\#}"
+
+REQUIRED_CMDS=(gh git jq)
+if use_docker_sandbox; then
+  REQUIRED_CMDS+=(sbx)
+else
+  REQUIRED_CMDS+=(opencode)
+fi
+
+for cmd in "${REQUIRED_CMDS[@]}"; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "$cmd is required and was not found." >&2
+    exit 1
+  fi
+done
+
+if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
+  echo "Must be run inside a git repository." >&2
+  exit 1
+fi
+
+WORKTREE_ROOT="$(git rev-parse --show-toplevel)"
+GIT_COMMON_DIR="$(git rev-parse --git-common-dir)"
+if [[ "$GIT_COMMON_DIR" != /* ]]; then
+  GIT_COMMON_DIR="$WORKTREE_ROOT/$GIT_COMMON_DIR"
+fi
+GIT_COMMON_DIR="$(abs_path "$GIT_COMMON_DIR")"
+
+if [[ "$(basename "$GIT_COMMON_DIR")" == ".git" ]]; then
+  REPO_ROOT="$(dirname "$GIT_COMMON_DIR")"
+else
+  REPO_ROOT="$WORKTREE_ROOT"
+fi
+
+cd "$REPO_ROOT"
+
+REPO_NAME="$(basename "$REPO_ROOT")"
+if [[ -z "${WORKTREE_BASE+x}" ]]; then
+  if use_docker_sandbox; then
+    WORKTREE_BASE="$(dirname "$REPO_ROOT")/${REPO_NAME}-sandbox-clones"
+  else
+    WORKTREE_BASE="$(dirname "$REPO_ROOT")/${REPO_NAME}-worktrees"
+  fi
+fi
+STATE_DIR="${STATE_DIR:-$HOME/.opencode/state/$REPO_NAME}"
+PROCESSED_FILE="$STATE_DIR/pr-${PR_NUMBER}-opencode-feedback-processed.txt"
+FEEDBACK_TRIGGER="${FEEDBACK_TRIGGER:-@H-E-L-P-eR}"
+FEEDBACK_AUTHOR="${FEEDBACK_AUTHOR:-}"
+if [[ -n "$FEEDBACK_AUTHOR" ]]; then
+  FEEDBACK_AUTHOR="${FEEDBACK_AUTHOR#@}"
+else
+  FEEDBACK_AUTHOR="$(gh api user --jq '.login')"
+fi
+mkdir -p "$WORKTREE_BASE" "$STATE_DIR"
+touch "$PROCESSED_FILE"
+
+DEFAULT_BRANCH="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
+if [[ -z "$DEFAULT_BRANCH" || "$DEFAULT_BRANCH" == "null" ]]; then
+  DEFAULT_BRANCH="main"
+fi
+
+ensure_label agent-feedback-ready D4C5F9 "PR feedback may be handled by opencode"
+ensure_label openspec-implementing F9D0C4 "OpenSpec implementation agent is running"
+ensure_label agent-done 0E8A16 "Agent believes work is ready for human review"
+ensure_label agent-blocked D93F0B "Agent stopped and needs human help"
+
+PR_JSON="$(gh pr view "$PR_NUMBER" --json title,url,body,headRefName,number)"
+PR_TITLE="$(printf '%s' "$PR_JSON" | jq -r '.title')"
+PR_URL="$(printf '%s' "$PR_JSON" | jq -r '.url')"
+PR_BODY="$(printf '%s' "$PR_JSON" | jq -r '.body // ""')"
+BRANCH="$(printf '%s' "$PR_JSON" | jq -r '.headRefName')"
+
+ISSUE_COMMENTS_JSON="$(gh api "repos/:owner/:repo/issues/${PR_NUMBER}/comments?per_page=100" 2>/dev/null || printf '[]')"
+INLINE_COMMENTS_JSON="$(gh api "repos/:owner/:repo/pulls/${PR_NUMBER}/comments?per_page=100" 2>/dev/null || printf '[]')"
+REVIEWS_JSON="$(gh api "repos/:owner/:repo/pulls/${PR_NUMBER}/reviews?per_page=100" 2>/dev/null || printf '[]')"
+
+PROCESSED_JSON="$(jq -R -s 'split("\n") | map(select(length > 0))' "$PROCESSED_FILE")"
+
+ISSUE_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" --arg author "$FEEDBACK_AUTHOR" '
+  [.[]
+    | select(.user.login == $author)
+    | select((.body // "") | contains($trigger))
+    | ("issue-comment:" + (.id|tostring)) as $key
+    | select(($done | index($key)) | not)
+    | "### [PR comment] id=\(.id) @\(.user.login) at \(.created_at):\n\(.body)"
+  ] | join("\n\n---\n\n")
+' <<< "$ISSUE_COMMENTS_JSON")"
+
+INLINE_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" --arg author "$FEEDBACK_AUTHOR" '
+  [.[]
+    | select(.user.login == $author)
+    | select((.body // "") | contains($trigger))
+    | ("inline-comment:" + (.id|tostring)) as $key
+    | select(($done | index($key)) | not)
+    | "### [inline review comment] id=\(.id) @\(.user.login) at \(.created_at) -- \(.path):\(.line // .original_line // "?"):\n\(.body)"
+  ] | join("\n\n---\n\n")
+' <<< "$INLINE_COMMENTS_JSON")"
+
+REVIEW_FEEDBACK="$(jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" --arg author "$FEEDBACK_AUTHOR" '
+  [.[]
+    | select(.user.login == $author)
+    | select((.body // "") | contains($trigger))
+    | ("review:" + (.id|tostring)) as $key
+    | select(($done | index($key)) | not)
+    | "### [review summary] id=\(.id) @\(.user.login) at \(.submitted_at) -- \(.state):\n\(.body)"
+  ] | join("\n\n---\n\n")
+' <<< "$REVIEWS_JSON")"
+
+NEW_KEYS="$(
+  {
+    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" --arg author "$FEEDBACK_AUTHOR" '.[] | select(.user.login == $author) | select((.body // "") | contains($trigger)) | "issue-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$ISSUE_COMMENTS_JSON"
+    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" --arg author "$FEEDBACK_AUTHOR" '.[] | select(.user.login == $author) | select((.body // "") | contains($trigger)) | "inline-comment:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$INLINE_COMMENTS_JSON"
+    jq -r --argjson done "$PROCESSED_JSON" --arg trigger "$FEEDBACK_TRIGGER" --arg author "$FEEDBACK_AUTHOR" '.[] | select(.user.login == $author) | select((.body // "") | contains($trigger)) | "review:" + (.id|tostring) as $key | select(($done | index($key)) | not) | $key' <<< "$REVIEWS_JSON"
+  } | sort -u
+)"
+
+if [[ -z "$NEW_KEYS" ]]; then
+  printf 'No unprocessed %s feedback for PR #%s.\n' "$FEEDBACK_TRIGGER" "$PR_NUMBER"
+  exit 0
+fi
+
+while IFS= read -r key; do
+  [[ -z "$key" ]] && continue
+  case "$key" in
+    issue-comment:*) react_issue_comment "${key#issue-comment:}" eyes ;;
+    inline-comment:*) react_review_comment "${key#inline-comment:}" eyes ;;
+  esac
+done <<< "$NEW_KEYS"
+
+WORKTREE="$WORKTREE_BASE/$BRANCH"
+git fetch origin "$DEFAULT_BRANCH" --quiet
+git fetch origin "$BRANCH:$BRANCH" --quiet 2>/dev/null || true
+
+prepare_checkout "$BRANCH" "$DEFAULT_BRANCH" head
+
+cd "$WORKTREE"
+configure_git_identity
+
+CHANGE_NAME="$(git diff --name-only "origin/$DEFAULT_BRANCH"...HEAD | sed -nE 's#^openspec/changes/([^/]+)/.*#\1#p' | sort -u | head -n 1)"
+if [[ -z "$CHANGE_NAME" ]]; then
+  CHANGE_NAME="$(printf '%s' "$PR_BODY" | sed -nE 's/.*openspec\/changes\/([^/`[:space:]]+).*/\1/p' | head -n 1)"
+fi
+
+gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=openspec-implementing" >/dev/null 2>&1 || true
+
+SUMMARY_FILE="$STATE_DIR/pr-${PR_NUMBER}-feedback-summary.md"
+: > "$SUMMARY_FILE"
+
+PROMPT="$(cat <<EOF
+Address new human feedback on PR #${PR_NUMBER} in the same PR branch.
+
+Run unattended and self-enforce these rules:
+- Work only in the worktree named below.
+- Only process feedback from the authorized author that contains the trigger named below.
+- Read the full feedback before editing.
+- Treat each triggered feedback item as human-in-the-loop direction.
+- If feedback requests a code/spec/task change and it fits current PR scope, implement it.
+- If feedback requests a scope change, update OpenSpec artifacts first when appropriate; otherwise explain why it is out of scope in the summary file.
+- Do not silently defer work. If deferring, create or reference a tracking issue and explain in the summary file.
+- Run relevant verification and openspec status when an OpenSpec change is present.
+- Commit, push, and update this same PR branch using git and gh.
+- Do not post PR comments or review replies yourself; the worker posts the deterministic completion reply.
+- Write a very short summary to the summary file named below. Include changed files/tests/deferred items only. Do not include the feedback trigger anywhere in that summary.
+- Keep label agent-feedback-ready on the PR.
+- Do not archive the OpenSpec change.
+
+PR: ${PR_TITLE}
+URL: ${PR_URL}
+Branch: ${BRANCH}
+Worktree: ${WORKTREE}
+${CHANGE_NAME:+OpenSpec change: ${CHANGE_NAME}}
+Feedback trigger: ${FEEDBACK_TRIGGER}
+Authorized feedback author: ${FEEDBACK_AUTHOR}
+Summary file: ${SUMMARY_FILE}
+
+UNPROCESSED REVIEW SUMMARIES:
+---
+${REVIEW_FEEDBACK:-(none)}
+---
+
+UNPROCESSED INLINE REVIEW COMMENTS:
+---
+${INLINE_FEEDBACK:-(none)}
+---
+
+UNPROCESSED PR COMMENTS:
+---
+${ISSUE_FEEDBACK:-(none)}
+---
+EOF
+)"
+
+METRICS_FILE="$STATE_DIR/agent-loop-metrics-feedback-pr-${PR_NUMBER}-$(date +%Y%m%d%H%M%S).json"
+RUN_ARGS=(run --dir "$WORKTREE" --agent openspec-feedback --title "openspec-feedback-pr-${PR_NUMBER}" --dangerously-skip-permissions)
+if [[ -n "${OPENCODE_MODEL:-}" ]]; then
+  RUN_ARGS+=(--model "$OPENCODE_MODEL")
+fi
+if [[ -n "${OPENCODE_RUN_FLAGS:-}" ]]; then
+  # shellcheck disable=SC2206
+  EXTRA_FLAGS=(${OPENCODE_RUN_FLAGS})
+  RUN_ARGS+=("${EXTRA_FLAGS[@]}")
+fi
+CODEX_RUN_ARGS=(exec --cd "$WORKTREE" --ask-for-approval never --sandbox danger-full-access)
+if [[ -n "${CODEX_MODEL:-}" ]]; then
+  CODEX_RUN_ARGS+=(--model "$CODEX_MODEL")
+fi
+if [[ -n "${CODEX_EXEC_FLAGS:-}" ]]; then
+  # shellcheck disable=SC2206
+  EXTRA_FLAGS=(${CODEX_EXEC_FLAGS})
+  CODEX_RUN_ARGS+=("${EXTRA_FLAGS[@]}")
+fi
+
+set +e
+run_agent
+AGENT_RC=$?
+set -e
+
+if [[ "$AGENT_RC" -ne 0 ]]; then
+  gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=agent-blocked" >/dev/null 2>&1 || true
+  exit "$AGENT_RC"
+fi
+
+post_feedback_reply "$SUMMARY_FILE"
+
+while IFS= read -r key; do
+  [[ -z "$key" ]] && continue
+  printf '%s\n' "$key" >> "$PROCESSED_FILE"
+  case "$key" in
+    issue-comment:*) react_issue_comment "${key#issue-comment:}" hooray ;;
+    inline-comment:*) react_review_comment "${key#inline-comment:}" hooray ;;
+  esac
+done <<< "$NEW_KEYS"
+sort -u "$PROCESSED_FILE" -o "$PROCESSED_FILE"
+
+gh issue edit "$PR_NUMBER" --remove-label openspec-implementing >/dev/null 2>&1 || true
+gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=agent-done" >/dev/null 2>&1 || true
+  "$REPO_ROOT/.opencode/scripts/openspec-post-agent-loop-metrics.sh" "$PR_NUMBER" "$METRICS_FILE" || true
+
+printf 'Processed %s feedback for PR #%s.\n' "$FEEDBACK_TRIGGER" "$PR_NUMBER"

@@ -1,0 +1,42 @@
+schemaVersion: "1"
+kind: mixin
+name: agent-loop
+displayName: OpenSpec Agent Loop
+description: Tooling and policy for local Codex/OpenCode worker sandboxes
+
+network:
+  allowedDomains:
+    - api.anthropic.com
+    - api.github.com
+    - api.openai.com
+    - github.com
+    - objects.githubusercontent.com
+    - raw.githubusercontent.com
+    - registry.npmjs.org
+    - www.npmjs.com
+
+commands:
+  install:
+    - command: "apt-get update && apt-get install -y gh jq curl ca-certificates"
+      description: Install worker system tools
+    - command: "npm install -g @juliusbrussee/caveman-code @fission-ai/openspec@latest"
+      user: "1000"
+      description: Install caveman and OpenSpec
+    - command: "curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh"
+      user: "1000"
+      description: Install RTK
+    - command: "$HOME/.local/bin/rtk init -g --opencode --auto-patch"
+      user: "1000"
+      description: Enable RTK for OpenCode
+
+environment:
+  variables:
+    OPENCODE_AGENT_LOOP_SANDBOX: "docker"
+    OPENSPEC_TELEMETRY: "0"
+    RTK_TELEMETRY_DISABLED: "1"
+
+agentContext: |
+  This agent session is running inside Docker Sandboxes for the OpenSpec agent loop.
+  Work only in the mounted worker repository. Use proxy-managed credentials.
+  OpenSpec CLI is installed as `openspec`; caveman tools are installed with `caveman`.
+  RTK is installed and configured for OpenCode bash output compaction.

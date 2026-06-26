@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  printf 'PR_STATUS not-git\n'
+  exit 0
+fi
+
+branch="$(git branch --show-current)"
+if [[ -z "$branch" ]]; then
+  printf 'PR_STATUS detached\n'
+  exit 0
+fi
+
+if ! command -v gh >/dev/null 2>&1; then
+  printf 'PR_STATUS gh-missing branch=%s\n' "$branch"
+  exit 0
+fi
+
+line="$(gh pr view "$branch" --json number,state,baseRefName,headRefName,url,mergedAt --jq '[.number, .state, .baseRefName, .headRefName, .url, (.mergedAt // "")] | @tsv' 2>/dev/null || true)"
+if [[ -z "$line" ]]; then
+  printf 'PR_STATUS none branch=%s\n' "$branch"
+  exit 0
+fi
+
+IFS=$'\t' read -r number state base head url merged_at <<< "$line"
+
+if [[ "$state" == "MERGED" && -n "$merged_at" ]]; then
+  printf 'PR_STATUS merged number=%s base=%s head=%s url=%s\n' "$number" "$base" "$head" "$url"
+elif [[ "$state" == "CLOSED" ]]; then
+  printf 'PR_STATUS closed number=%s base=%s head=%s url=%s\n' "$number" "$base" "$head" "$url"
+elif [[ "$state" == "OPEN" ]]; then
+  printf 'PR_STATUS open number=%s base=%s head=%s url=%s\n' "$number" "$base" "$head" "$url"
+else
+  printf 'PR_STATUS unknown state=%s number=%s base=%s head=%s url=%s\n' "$state" "$number" "$base" "$head" "$url"
+fi
