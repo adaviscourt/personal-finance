@@ -2,7 +2,7 @@ schemaVersion: "1"
 kind: mixin
 name: agent-loop
 displayName: OpenSpec Agent Loop
-description: Tooling and policy for local OpenCode worker sandboxes
+description: Tooling and policy for local Codex/OpenCode worker sandboxes
 
 network:
   allowedDomains:
@@ -36,7 +36,7 @@ environment:
     RTK_TELEMETRY_DISABLED: "1"
 
 agentContext: |
-  This OpenCode session is running inside Docker Sandboxes for the OpenSpec agent loop.
+  This agent session is running inside Docker Sandboxes for the OpenSpec agent loop.
   Work only in the mounted worker repository. Use proxy-managed credentials.
   OpenSpec CLI is installed as `openspec`; caveman tools are installed with `caveman`.
   RTK is installed and configured for OpenCode bash output compaction.

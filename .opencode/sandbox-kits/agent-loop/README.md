@@ -6,7 +6,7 @@ Use this Docker Sandboxes mixin with worker scripts by setting:
 AGENT_LOOP_SANDBOX=docker
 ```
 
-Workers then launch OpenCode with `sbx run opencode` instead of host `opencode`.
+Workers then launch Codex with `sbx run codex` instead of host `opencode`.
 Docker mode defaults `WORKTREE_BASE` to `../<repo>-sandbox-clones` so mounted repositories are standalone clones, not Git worktrees with `.git` pointer files.
 
 ## Host Setup
@@ -31,17 +31,18 @@ sbx secret set -g anthropic
 sbx secret set -g openai
 ```
 
-Docker documents OpenAI OAuth for Codex; try this if you want subscription auth instead of an API key:
+Docker's OpenAI OAuth flow is wired for Codex sandboxes. Use this if you want subscription auth instead of an API key:
 
 ```bash
 sbx secret set -g openai --oauth
 ```
 
-If OpenCode does not pick up OAuth through the sandbox proxy, fall back to `sbx secret set -g openai` with an API key.
+`AGENT_LOOP_SANDBOX_AGENT=opencode` restores the old OpenCode sandbox path, but OpenAI OAuth may not be injected into OpenCode sandboxes by `sbx`.
 
 ## What The Kit Installs
 
 - `gh`, `jq`, `curl`, `ca-certificates`
+- Codex from the Docker Sandboxes Codex template
 - `@juliusbrussee/caveman-code`
 - `@fission-ai/openspec@latest`
 - `rtk`, initialized for OpenCode

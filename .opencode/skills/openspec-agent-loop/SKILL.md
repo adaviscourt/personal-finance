@@ -125,7 +125,7 @@ Prefer the foreground supervisor while iterating because logs are centralized an
 
 ## Docker Sandbox Mode
 
-Docker sandbox mode runs worker OpenCode sessions through `sbx run opencode` with `.opencode/sandbox-kits/agent-loop`.
+Docker sandbox mode runs worker sessions through `sbx run codex` with `.opencode/sandbox-kits/agent-loop` by default. Set `AGENT_LOOP_SANDBOX_AGENT=opencode` to restore the old OpenCode sandbox path.
 
 Host setup:
 
@@ -134,10 +134,10 @@ brew install docker/tap/sbx
 sbx login
 gh auth token | sbx secret set -g github
 sbx secret set -g anthropic
-sbx secret set -g openai
+sbx secret set -g openai --oauth
 ```
 
-OpenAI OAuth may work through Docker's Codex-compatible flow; try `sbx secret set -g openai --oauth`. If OpenCode does not pick it up through the sandbox proxy, use the API-key secret path above.
+OpenAI OAuth is expected to work with Codex sandboxes. `sbx` may not inject OpenAI OAuth into OpenCode sandboxes.
 
 Run watchers in sandbox mode:
 

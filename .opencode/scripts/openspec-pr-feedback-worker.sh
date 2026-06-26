@@ -17,9 +17,12 @@ Environment:
   GH_TOKEN            Optional bot/machine token; determines GitHub comment/reaction actor.
   AGENT_GIT_NAME      Optional git user.name configured in the feedback worktree.
   AGENT_GIT_EMAIL     Optional git user.email configured in the feedback worktree.
-  AGENT_LOOP_SANDBOX  Optional sandbox mode. Set to docker to run opencode via Docker sbx.
+  AGENT_LOOP_SANDBOX  Optional sandbox mode. Set to docker to run via Docker sbx.
+  AGENT_LOOP_SANDBOX_AGENT Optional sbx agent in docker mode. Defaults to codex; set opencode to restore old path.
   OPENCODE_MODEL      Optional model override, e.g. openai/gpt-5.5.
   OPENCODE_RUN_FLAGS  Optional extra flags passed to opencode run.
+  CODEX_MODEL         Optional Codex model override in docker mode.
+  CODEX_EXEC_FLAGS    Optional extra flags passed to codex exec in docker mode.
 USAGE
 }
 
@@ -96,16 +99,28 @@ prepare_checkout() {
   fi
 }
 
-run_opencode() {
+run_agent() {
   if use_docker_sandbox; then
-    local sandbox_name kit_path
+    local sandbox_name kit_path sandbox_agent
     if ! command -v sbx >/dev/null 2>&1; then
       echo "sbx is required when AGENT_LOOP_SANDBOX=docker." >&2
       return 1
     fi
     sandbox_name="openspec-feedback-${PR_NUMBER}-$(date +%Y%m%d%H%M%S)"
     kit_path="$REPO_ROOT/.opencode/sandbox-kits/agent-loop"
-    sbx run opencode --name "$sandbox_name" --kit "$kit_path" "$WORKTREE" "$STATE_DIR" -- "${RUN_ARGS[@]}" "$PROMPT"
+    sandbox_agent="${AGENT_LOOP_SANDBOX_AGENT:-codex}"
+    case "$sandbox_agent" in
+      codex)
+        sbx run codex --name "$sandbox_name" --kit "$kit_path" "$WORKTREE" "$STATE_DIR" -- "${CODEX_RUN_ARGS[@]}" "$PROMPT"
+        ;;
+      opencode)
+        sbx run opencode --name "$sandbox_name" --kit "$kit_path" "$WORKTREE" "$STATE_DIR" -- "${RUN_ARGS[@]}" "$PROMPT"
+        ;;
+      *)
+        echo "Unsupported AGENT_LOOP_SANDBOX_AGENT: $sandbox_agent" >&2
+        return 1
+        ;;
+    esac
   else
     OPENCODE_AGENT_LOOP_METRICS_FILE="$METRICS_FILE" \
     OPENCODE_AGENT_LOOP_PHASE="feedback" \
@@ -337,6 +352,21 @@ SUMMARY_FILE="$STATE_DIR/pr-${PR_NUMBER}-feedback-summary.md"
 PROMPT="$(cat <<EOF
 Address new human feedback on PR #${PR_NUMBER} in the same PR branch.
 
+Run unattended and self-enforce these rules:
+- Work only in the worktree named below.
+- Only process feedback from the authorized author that contains the trigger named below.
+- Read the full feedback before editing.
+- Treat each triggered feedback item as human-in-the-loop direction.
+- If feedback requests a code/spec/task change and it fits current PR scope, implement it.
+- If feedback requests a scope change, update OpenSpec artifacts first when appropriate; otherwise explain why it is out of scope in the summary file.
+- Do not silently defer work. If deferring, create or reference a tracking issue and explain in the summary file.
+- Run relevant verification and openspec status when an OpenSpec change is present.
+- Commit, push, and update this same PR branch using git and gh.
+- Do not post PR comments or review replies yourself; the worker posts the deterministic completion reply.
+- Write a very short summary to the summary file named below. Include changed files/tests/deferred items only. Do not include the feedback trigger anywhere in that summary.
+- Keep label agent-feedback-ready on the PR.
+- Do not archive the OpenSpec change.
+
 PR: ${PR_TITLE}
 URL: ${PR_URL}
 Branch: ${BRANCH}
@@ -373,15 +403,24 @@ if [[ -n "${OPENCODE_RUN_FLAGS:-}" ]]; then
   EXTRA_FLAGS=(${OPENCODE_RUN_FLAGS})
   RUN_ARGS+=("${EXTRA_FLAGS[@]}")
 fi
+CODEX_RUN_ARGS=(exec --cd "$WORKTREE" --ask-for-approval never --sandbox danger-full-access)
+if [[ -n "${CODEX_MODEL:-}" ]]; then
+  CODEX_RUN_ARGS+=(--model "$CODEX_MODEL")
+fi
+if [[ -n "${CODEX_EXEC_FLAGS:-}" ]]; then
+  # shellcheck disable=SC2206
+  EXTRA_FLAGS=(${CODEX_EXEC_FLAGS})
+  CODEX_RUN_ARGS+=("${EXTRA_FLAGS[@]}")
+fi
 
 set +e
-run_opencode
-OPENCODE_RC=$?
+run_agent
+AGENT_RC=$?
 set -e
 
-if [[ "$OPENCODE_RC" -ne 0 ]]; then
+if [[ "$AGENT_RC" -ne 0 ]]; then
   gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=agent-blocked" >/dev/null 2>&1 || true
-  exit "$OPENCODE_RC"
+  exit "$AGENT_RC"
 fi
 
 post_feedback_reply "$SUMMARY_FILE"

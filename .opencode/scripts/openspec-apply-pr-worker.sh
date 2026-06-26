@@ -14,9 +14,12 @@ Environment:
   GH_TOKEN            Optional bot/machine token; determines GitHub PR/comment/label actor.
   AGENT_GIT_NAME      Optional git user.name configured in the implementation worktree.
   AGENT_GIT_EMAIL     Optional git user.email configured in the implementation worktree.
-  AGENT_LOOP_SANDBOX  Optional sandbox mode. Set to docker to run opencode via Docker sbx.
+  AGENT_LOOP_SANDBOX  Optional sandbox mode. Set to docker to run via Docker sbx.
+  AGENT_LOOP_SANDBOX_AGENT Optional sbx agent in docker mode. Defaults to codex; set opencode to restore old path.
   OPENCODE_MODEL      Optional model override, e.g. openai/gpt-5.5.
   OPENCODE_RUN_FLAGS  Optional extra flags passed to opencode run.
+  CODEX_MODEL         Optional Codex model override in docker mode.
+  CODEX_EXEC_FLAGS    Optional extra flags passed to codex exec in docker mode.
 USAGE
 }
 
@@ -93,16 +96,28 @@ prepare_checkout() {
   fi
 }
 
-run_opencode() {
+run_agent() {
   if use_docker_sandbox; then
-    local sandbox_name kit_path
+    local sandbox_name kit_path sandbox_agent
     if ! command -v sbx >/dev/null 2>&1; then
       echo "sbx is required when AGENT_LOOP_SANDBOX=docker." >&2
       return 1
     fi
     sandbox_name="openspec-apply-${PR_NUMBER}-$(date +%Y%m%d%H%M%S)"
     kit_path="$REPO_ROOT/.opencode/sandbox-kits/agent-loop"
-    sbx run opencode --name "$sandbox_name" --kit "$kit_path" "$WORKTREE" "$STATE_DIR" -- "${RUN_ARGS[@]}" "$PROMPT"
+    sandbox_agent="${AGENT_LOOP_SANDBOX_AGENT:-codex}"
+    case "$sandbox_agent" in
+      codex)
+        sbx run codex --name "$sandbox_name" --kit "$kit_path" "$WORKTREE" "$STATE_DIR" -- "${CODEX_RUN_ARGS[@]}" "$PROMPT"
+        ;;
+      opencode)
+        sbx run opencode --name "$sandbox_name" --kit "$kit_path" "$WORKTREE" "$STATE_DIR" -- "${RUN_ARGS[@]}" "$PROMPT"
+        ;;
+      *)
+        echo "Unsupported AGENT_LOOP_SANDBOX_AGENT: $sandbox_agent" >&2
+        return 1
+        ;;
+    esac
   else
     OPENCODE_AGENT_LOOP_METRICS_FILE="$METRICS_FILE" \
     OPENCODE_AGENT_LOOP_PHASE="implementation" \
@@ -208,6 +223,20 @@ gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[
 PROMPT="$(cat <<EOF
 Implement OpenSpec change ${CHANGE_NAME} in this same PR branch.
 
+Run unattended and self-enforce these rules:
+- Work only in the worktree named below.
+- Read proposal.md, design.md, tasks.md, and relevant specs for the change before editing application code.
+- Confirm artifacts are coherent and apply-ready before implementation.
+- Implement the tasks in openspec/changes/${CHANGE_NAME}/tasks.md.
+- Keep scope to the approved OpenSpec artifacts. If implementation reveals scope change, stop and report instead of silently expanding.
+- Mark completed tasks in tasks.md.
+- Run relevant verification and openspec status for the change.
+- Commit, push, and update this same PR branch using git and gh.
+- PR body must mention the OpenSpec change and exact tasks completed.
+- After implementation is complete, PR body should include Closes #<issue> when an original issue is provided.
+- Keep label agent-feedback-ready on the PR so @H-E-L-P-eR feedback can be handled.
+- Do not archive the OpenSpec change.
+
 PR: ${PR_TITLE}
 URL: ${PR_URL}
 PR number: #${PR_NUMBER}
@@ -227,15 +256,24 @@ if [[ -n "${OPENCODE_RUN_FLAGS:-}" ]]; then
   EXTRA_FLAGS=(${OPENCODE_RUN_FLAGS})
   RUN_ARGS+=("${EXTRA_FLAGS[@]}")
 fi
+CODEX_RUN_ARGS=(exec --cd "$WORKTREE" --ask-for-approval never --sandbox danger-full-access)
+if [[ -n "${CODEX_MODEL:-}" ]]; then
+  CODEX_RUN_ARGS+=(--model "$CODEX_MODEL")
+fi
+if [[ -n "${CODEX_EXEC_FLAGS:-}" ]]; then
+  # shellcheck disable=SC2206
+  EXTRA_FLAGS=(${CODEX_EXEC_FLAGS})
+  CODEX_RUN_ARGS+=("${EXTRA_FLAGS[@]}")
+fi
 
 set +e
-run_opencode
-OPENCODE_RC=$?
+run_agent
+AGENT_RC=$?
 set -e
 
-if [[ "$OPENCODE_RC" -ne 0 ]]; then
+if [[ "$AGENT_RC" -ne 0 ]]; then
   gh api "repos/:owner/:repo/issues/${PR_NUMBER}/labels" --method POST -f "labels[]=agent-blocked" >/dev/null 2>&1 || true
-  exit "$OPENCODE_RC"
+  exit "$AGENT_RC"
 fi
 
 if [[ -n "$ISSUE_NUMBER" ]]; then

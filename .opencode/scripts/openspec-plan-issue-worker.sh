@@ -14,9 +14,12 @@ Environment:
   GH_TOKEN            Optional bot/machine token; determines GitHub PR/comment/label actor.
   AGENT_GIT_NAME      Optional git user.name configured in the planning worktree.
   AGENT_GIT_EMAIL     Optional git user.email configured in the planning worktree.
-  AGENT_LOOP_SANDBOX  Optional sandbox mode. Set to docker to run opencode via Docker sbx.
+  AGENT_LOOP_SANDBOX  Optional sandbox mode. Set to docker to run via Docker sbx.
+  AGENT_LOOP_SANDBOX_AGENT Optional sbx agent in docker mode. Defaults to codex; set opencode to restore old path.
   OPENCODE_MODEL      Optional model override, e.g. openai/gpt-5.5.
   OPENCODE_RUN_FLAGS  Optional extra flags passed to opencode run.
+  CODEX_MODEL         Optional Codex model override in docker mode.
+  CODEX_EXEC_FLAGS    Optional extra flags passed to codex exec in docker mode.
 USAGE
 }
 
@@ -97,16 +100,28 @@ prepare_checkout() {
   fi
 }
 
-run_opencode() {
+run_agent() {
   if use_docker_sandbox; then
-    local sandbox_name kit_path
+    local sandbox_name kit_path sandbox_agent
     if ! command -v sbx >/dev/null 2>&1; then
       echo "sbx is required when AGENT_LOOP_SANDBOX=docker." >&2
       return 1
     fi
     sandbox_name="openspec-plan-${ISSUE_NUMBER}-$(date +%Y%m%d%H%M%S)"
     kit_path="$REPO_ROOT/.opencode/sandbox-kits/agent-loop"
-    sbx run opencode --name "$sandbox_name" --kit "$kit_path" "$WORKTREE" "$STATE_DIR" -- "${RUN_ARGS[@]}" "$PROMPT"
+    sandbox_agent="${AGENT_LOOP_SANDBOX_AGENT:-codex}"
+    case "$sandbox_agent" in
+      codex)
+        sbx run codex --name "$sandbox_name" --kit "$kit_path" "$WORKTREE" "$STATE_DIR" -- "${CODEX_RUN_ARGS[@]}" "$PROMPT"
+        ;;
+      opencode)
+        sbx run opencode --name "$sandbox_name" --kit "$kit_path" "$WORKTREE" "$STATE_DIR" -- "${RUN_ARGS[@]}" "$PROMPT"
+        ;;
+      *)
+        echo "Unsupported AGENT_LOOP_SANDBOX_AGENT: $sandbox_agent" >&2
+        return 1
+        ;;
+    esac
   else
     OPENCODE_AGENT_LOOP_METRICS_FILE="$METRICS_FILE" \
     OPENCODE_AGENT_LOOP_PHASE="planning" \
@@ -217,6 +232,19 @@ gh issue edit "$ISSUE_NUMBER" --add-label openspec-planning >/dev/null
 PROMPT="$(cat <<EOF
 Create OpenSpec artifacts from GitHub issue #${ISSUE_NUMBER}.
 
+Run unattended and self-enforce these rules:
+- Work only in the planning worktree named below.
+- Create OpenSpec artifacts for the suggested change name unless a better kebab-case name is clearly required by the issue.
+- Create proposal, specs, design when useful, and tasks under openspec/changes/<change-name>/.
+- Do not implement application code in this planning phase except generated OpenSpec artifacts and minimal issue/PR metadata edits.
+- Run OpenSpec validation/status checks after creating artifacts.
+- Commit, push, and open a PR from this same branch using git and gh.
+- PR title should make clear this is OpenSpec planning.
+- PR body must include Refs #${ISSUE_NUMBER} and must not include Closes #${ISSUE_NUMBER} yet.
+- PR body must explain that adding label openspec-apply-ready to this PR authorizes implementation in the same PR.
+- Add PR label openspec-review-ready if possible.
+- If blocked or scope is unclear, stop and report. Do not invent broad implementation scope.
+
 Issue: ${ISSUE_TITLE}
 URL: ${ISSUE_URL}
 Suggested change name: ${CHANGE_NAME}
@@ -244,15 +272,24 @@ if [[ -n "${OPENCODE_RUN_FLAGS:-}" ]]; then
   EXTRA_FLAGS=(${OPENCODE_RUN_FLAGS})
   RUN_ARGS+=("${EXTRA_FLAGS[@]}")
 fi
+CODEX_RUN_ARGS=(exec --cd "$WORKTREE" --ask-for-approval never --sandbox danger-full-access)
+if [[ -n "${CODEX_MODEL:-}" ]]; then
+  CODEX_RUN_ARGS+=(--model "$CODEX_MODEL")
+fi
+if [[ -n "${CODEX_EXEC_FLAGS:-}" ]]; then
+  # shellcheck disable=SC2206
+  EXTRA_FLAGS=(${CODEX_EXEC_FLAGS})
+  CODEX_RUN_ARGS+=("${EXTRA_FLAGS[@]}")
+fi
 
 set +e
-run_opencode
-OPENCODE_RC=$?
+run_agent
+AGENT_RC=$?
 set -e
 
-if [[ "$OPENCODE_RC" -ne 0 ]]; then
+if [[ "$AGENT_RC" -ne 0 ]]; then
   gh issue edit "$ISSUE_NUMBER" --add-label agent-blocked >/dev/null 2>&1 || true
-  exit "$OPENCODE_RC"
+  exit "$AGENT_RC"
 fi
 
 PR_JSON="$(gh pr list --head "$BRANCH" --state open --json number,url --jq '.[0] // empty')"
